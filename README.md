@@ -1,0 +1,1 @@
+# farm-manager-worker-app
