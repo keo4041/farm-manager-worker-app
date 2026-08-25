@@ -1,13 +1,27 @@
-import { doc, getDoc, setDoc, collection, query, where, getDocs, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { db, auth } from './firebase';
 
 export type UserRole = 'owner' | 'admin' | 'supervisor' | 'worker';
+export type AuthMethod = 'email' | 'username';
+
+export const PSEUDO_EMAIL_DOMAIN = 'farmapp.local';
+
+/**
+ * Builds a deterministic pseudo-email for workers without standard email
+ * Format: {username}@{tenantId}.farmapp.local
+ */
+export const buildPseudoEmail = (username: string, tenantId: string): string => {
+  const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
+  return `${cleanUsername}@${tenantId}.${PSEUDO_EMAIL_DOMAIN}`;
+};
 
 export interface UserProfile {
   uid: string;
   tenantId: string;
   email: string;
+  username?: string;
+  authMethod: AuthMethod;
   displayName: string;
   role: UserRole;
   createdAt: string;
@@ -24,6 +38,7 @@ export interface LicenseQuota {
 
 export interface Tenant {
   tenantId: string;
+  farmCode: string; // e.g. AGBE4821
   name: string;
   ownerId: string;
   ownerEmail: string;
@@ -32,11 +47,56 @@ export interface Tenant {
 }
 
 export interface NewTeamMemberInput {
-  email: string;
+  email?: string;
+  username?: string;
   password?: string;
   displayName: string;
   role: UserRole;
+  authMethod?: AuthMethod;
 }
+
+/**
+ * Looks up a tenant organization by its unique Farm Code
+ */
+export const lookupTenantByFarmCode = async (farmCode: string): Promise<Tenant | null> => {
+  try {
+    const cleanCode = farmCode.trim().toUpperCase();
+    if (!cleanCode) return null;
+    const q = query(collection(db, 'tenants'), where('farmCode', '==', cleanCode));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      return snap.docs[0].data() as Tenant;
+    }
+    return null;
+  } catch (err) {
+    console.error('Error looking up tenant by farm code:', err);
+    return null;
+  }
+};
+
+/**
+ * Generates an automatic, collision-free unique Farm Code
+ * Format: [PREFIX][4-digit random number] (e.g. AGBE4921)
+ */
+export const generateUniqueFarmCode = async (farmName: string): Promise<string> => {
+  const cleanName = farmName.replace(/[^a-zA-Z]/g, '').toUpperCase();
+  const prefix = (cleanName.length >= 3 ? cleanName.substring(0, 4) : 'FARM').padEnd(3, 'X');
+
+  let attempts = 0;
+  while (attempts < 10) {
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000).toString();
+    const candidateCode = `${prefix}${randomSuffix}`;
+
+    const existing = await lookupTenantByFarmCode(candidateCode);
+    if (!existing) {
+      return candidateCode;
+    }
+    attempts++;
+  }
+
+  // Guaranteed timestamp fallback in rare case of high collision
+  return `${prefix}${Date.now().toString().slice(-4)}`;
+};
 
 /**
  * Creates a new tenant farm organization along with its Owner account
@@ -46,16 +106,30 @@ export const createTenantAccount = async (
   ownerEmail: string,
   ownerPassword: string,
   ownerDisplayName: string,
-  initialTeamMembers: NewTeamMemberInput[] = []
+  initialTeamMembers: NewTeamMemberInput[] = [],
+  customFarmCode?: string
 ): Promise<{ tenant: Tenant; ownerProfile: UserProfile }> => {
   // 1. Create Firebase Auth user for Owner
   const authRes = await createUserWithEmailAndPassword(auth, ownerEmail, ownerPassword);
   const ownerUid = authRes.user.uid;
   const tenantId = `tenant_${Date.now()}`;
 
-  // 2. Build Tenant Document
+  // 2. Generate unique Farm Code
+  let farmCode = customFarmCode?.trim().toUpperCase();
+  if (!farmCode) {
+    farmCode = await generateUniqueFarmCode(farmName);
+  } else {
+    // If custom code provided, check for duplicate
+    const existing = await lookupTenantByFarmCode(farmCode);
+    if (existing) {
+      farmCode = await generateUniqueFarmCode(farmName);
+    }
+  }
+
+  // 3. Build Tenant Document
   const tenantDoc: Tenant = {
     tenantId,
+    farmCode,
     name: farmName,
     ownerId: ownerUid,
     ownerEmail,
@@ -70,36 +144,53 @@ export const createTenantAccount = async (
     },
   };
 
-  // 3. Save Tenant Document in Firestore
+  // 4. Save Tenant Document in Firestore
   await setDoc(doc(db, 'tenants', tenantId), tenantDoc);
 
-  // 4. Save Owner User Profile Document
+  // 5. Save Owner User Profile Document
   const ownerProfile: UserProfile = {
     uid: ownerUid,
     tenantId,
     email: ownerEmail,
+    authMethod: 'email',
     displayName: ownerDisplayName || 'Farm Owner',
     role: 'owner',
     createdAt: new Date().toISOString(),
   };
   await setDoc(doc(db, 'users', ownerUid), ownerProfile);
 
-  // 5. Optionally create initial team members (Note: In production app, these would be invited via cloud function or secondary auth instance)
+  // 6. Optionally create initial team members (Email or Username-based)
   for (const member of initialTeamMembers) {
-    if (member.email && member.password) {
-      try {
-        const memberAuth = await createUserWithEmailAndPassword(auth, member.email, member.password);
-        const memberProfile: UserProfile = {
-          uid: memberAuth.user.uid,
-          tenantId,
-          email: member.email,
-          displayName: member.displayName || member.role.toUpperCase(),
-          role: member.role,
-          createdAt: new Date().toISOString(),
-        };
-        await setDoc(doc(db, 'users', memberAuth.user.uid), memberProfile);
-      } catch (err) {
-        console.warn(`Failed to auto-create auth user for ${member.email}:`, err);
+    if (member.password) {
+      let memberEmail = member.email?.trim();
+      let cleanUsername: string | undefined;
+      let memberAuthMethod: AuthMethod = 'email';
+
+      if (member.username?.trim()) {
+        cleanUsername = member.username.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
+        memberEmail = buildPseudoEmail(cleanUsername, tenantId);
+        memberAuthMethod = 'username';
+      } else if (memberEmail) {
+        memberAuthMethod = 'email';
+      }
+
+      if (memberEmail) {
+        try {
+          const memberAuth = await createUserWithEmailAndPassword(auth, memberEmail, member.password);
+          const memberProfile: UserProfile = {
+            uid: memberAuth.user.uid,
+            tenantId,
+            email: memberEmail,
+            ...(cleanUsername ? { username: cleanUsername } : {}),
+            authMethod: memberAuthMethod,
+            displayName: member.displayName || cleanUsername || member.role.toUpperCase(),
+            role: member.role,
+            createdAt: new Date().toISOString(),
+          };
+          await setDoc(doc(db, 'users', memberAuth.user.uid), memberProfile);
+        } catch (err) {
+          console.warn(`Failed to auto-create auth user for ${memberEmail}:`, err);
+        }
       }
     }
   }
@@ -108,14 +199,15 @@ export const createTenantAccount = async (
 };
 
 /**
- * Adds a new user to an existing tenant organization
+ * Adds a new user to an existing tenant organization (supports email or username)
  */
 export const addUserToTenant = async (
   tenantId: string,
-  email: string,
+  identifier: string, // Email or Username
   password: string,
   displayName: string,
-  role: UserRole
+  role: UserRole,
+  isUsername = !identifier.includes('@')
 ): Promise<UserProfile> => {
   // Verify quota limits before adding user
   const quotaCheck = await checkLicenseQuota(tenantId);
@@ -123,15 +215,36 @@ export const addUserToTenant = async (
     throw new Error(`License limit reached: ${quotaCheck.reason}`);
   }
 
-  // Create auth account
-  const authRes = await createUserWithEmailAndPassword(auth, email, password);
+  let authEmail: string;
+  let authMethod: AuthMethod;
+  let cleanUsername: string | undefined;
+
+  if (isUsername) {
+    cleanUsername = identifier.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
+    if (!cleanUsername) {
+      throw new Error('Valid username is required.');
+    }
+    authEmail = buildPseudoEmail(cleanUsername, tenantId);
+    authMethod = 'username';
+  } else {
+    authEmail = identifier.trim();
+    if (!authEmail) {
+      throw new Error('Valid email is required.');
+    }
+    authMethod = 'email';
+  }
+
+  // Create Firebase Auth user
+  const authRes = await createUserWithEmailAndPassword(auth, authEmail, password);
   const uid = authRes.user.uid;
 
   const userProfile: UserProfile = {
     uid,
     tenantId,
-    email,
-    displayName: displayName || email.split('@')[0],
+    email: authEmail,
+    ...(cleanUsername ? { username: cleanUsername } : {}),
+    authMethod,
+    displayName: displayName || cleanUsername || authEmail.split('@')[0],
     role,
     createdAt: new Date().toISOString(),
   };

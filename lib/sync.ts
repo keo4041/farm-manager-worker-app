@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { storage, db } from './firebase';
@@ -17,7 +17,6 @@ export interface PendingMedia {
   errorMessage?: string;
   createdAt: string;
 }
-
 
 const SYNC_QUEUE_KEY = '@farm_manager_sync_queue';
 
@@ -87,24 +86,22 @@ export const retryFailedItems = async () => {
 };
 
 /**
- * Safely converts local URI to a Blob (with Base64 fallback for native Expo environments)
+ * Safely converts local URI to a Blob using modern expo-file-system File API with fetch fallback
  */
 const getBlobFromUri = async (uri: string): Promise<Blob> => {
   try {
     const response = await fetch(uri);
     return await response.blob();
   } catch (err) {
-    // Native FileSystem Base64 Fallback
-    const base64Data = await FileSystem.readAsStringAsync(uri, {
-      encoding: (FileSystem as any).EncodingType?.Base64 || 'base64',
-    });
-    const byteCharacters = atob(base64Data);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    // New expo-file-system File API - direct binary bytes
+    try {
+      const file = new File(uri);
+      const bytes = await file.bytes();
+      return new Blob([bytes]);
+    } catch (fileErr) {
+      console.error('Error reading file bytes via File class:', fileErr);
+      throw fileErr;
     }
-    const byteArray = new Uint8Array(byteNumbers);
-    return new Blob([byteArray]);
   }
 };
 
@@ -128,9 +125,9 @@ export const processSyncQueue = async (onProgress?: ProgressCallback) => {
 
   for (const item of pendingItems) {
     try {
-      // 1. Verify local file existence
-      const fileInfo = await FileSystem.getInfoAsync(item.localUri);
-      if (!fileInfo.exists) {
+      // 1. Verify local file existence using new File API
+      const file = new File(item.localUri);
+      if (!file.exists) {
         await updateItemInQueue(item.id, {
           status: 'failed',
           errorMessage: 'Local file missing',
@@ -152,7 +149,6 @@ export const processSyncQueue = async (onProgress?: ProgressCallback) => {
       const blob = await getBlobFromUri(item.localUri);
       const tenantPath = item.tenantId ? `tenants/${item.tenantId}/` : '';
       const storageRef = ref(storage, `${tenantPath}logs/${item.logId}/${item.fileName}`);
-
 
       // 4. Upload with uploadBytesResumable for real-time progress callbacks
       const uploadTask = uploadBytesResumable(storageRef, blob);
@@ -212,4 +208,3 @@ export const processSyncQueue = async (onProgress?: ProgressCallback) => {
 
   return { success: true, count: processed, failed };
 };
-

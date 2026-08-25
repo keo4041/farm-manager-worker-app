@@ -26,7 +26,8 @@ service cloud.firestore {
     // 1. Tenants Collection
     // =========================================================================
     match /tenants/{tenantId} {
-      allow read: if isTenantMember(tenantId);
+      // Allow read for authenticated members OR unauthenticated read for farmCode login resolution
+      allow read: if isTenantMember(tenantId) || resource.data.farmCode != null;
       allow create: if isAuthenticated();
       allow update, delete: if isOwnerOrAdmin(tenantId);
     }

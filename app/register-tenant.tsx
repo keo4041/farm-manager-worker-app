@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { createTenantAccount, UserRole, NewTeamMemberInput } from '../lib/tenant';
+import { createTenantAccount, UserRole, NewTeamMemberInput, AuthMethod } from '../lib/tenant';
 
 export default function RegisterTenant() {
   const router = useRouter();
@@ -14,14 +14,14 @@ export default function RegisterTenant() {
 
   // Initial Team Members Setup
   const [teamMembers, setTeamMembers] = useState<NewTeamMemberInput[]>([
-    { email: '', password: '', displayName: '', role: 'admin' },
-    { email: '', password: '', displayName: '', role: 'supervisor' },
-    { email: '', password: '', displayName: '', role: 'worker' },
+    { email: '', username: '', password: '', displayName: '', role: 'admin', authMethod: 'email' },
+    { email: '', username: '', password: '', displayName: '', role: 'supervisor', authMethod: 'email' },
+    { email: '', username: '', password: '', displayName: '', role: 'worker', authMethod: 'username' },
   ]);
 
   const [loading, setLoading] = useState(false);
 
-  const updateMember = (index: number, field: keyof NewTeamMemberInput, value: string) => {
+  const updateMember = (index: number, field: keyof NewTeamMemberInput, value: any) => {
     const updated = [...teamMembers];
     updated[index] = { ...updated[index], [field]: value };
     setTeamMembers(updated);
@@ -35,10 +35,13 @@ export default function RegisterTenant() {
 
     setLoading(true);
     try {
-      // Filter valid team members with email & password filled
-      const validTeam = teamMembers.filter(m => m.email.trim() && m.password?.trim());
+      // Filter valid team members with identifier & password filled
+      const validTeam = teamMembers.filter(m => {
+        const hasId = m.authMethod === 'username' ? !!m.username?.trim() : !!m.email?.trim();
+        return hasId && !!m.password?.trim();
+      });
 
-      await createTenantAccount(
+      const { tenant } = await createTenantAccount(
         farmName.trim(),
         ownerEmail.trim(),
         ownerPassword.trim(),
@@ -48,9 +51,9 @@ export default function RegisterTenant() {
 
       Alert.alert(
         'Tenant Account Created! / Compte Créé!',
-        `Welcome to ${farmName}! Tenant registered successfully. Logging in...`
+        `Welcome to ${farmName}!\n\nYour Farm Code is: ${tenant.farmCode}\n\nShare this Farm Code with your workers so they can log in using their username.`,
+        [{ text: 'CONTINUE', onPress: () => router.replace('/') }]
       );
-      router.replace('/');
     } catch (err: any) {
       Alert.alert('Registration Failed', err.message);
     } finally {
@@ -105,33 +108,67 @@ export default function RegisterTenant() {
       <Text className="text-xl font-bold bg-black text-safety-yellow p-2 mb-2">
         INITIAL TEAM MEMBERS (OPTIONAL)
       </Text>
-      <Text className="text-gray-500 font-bold mb-4">You can pre-add Admins, Supervisors, or Workers now or add them later.</Text>
+      <Text className="text-gray-500 font-bold mb-4">
+        You can pre-add Admins, Supervisors, or Workers with email or username.
+      </Text>
 
       {teamMembers.map((member, i) => (
         <View key={i} className="border-2 border-gray-300 p-4 rounded-xl mb-4 bg-gray-50">
-          <Text className="font-extrabold text-black text-lg mb-2 capitalize">
-            Role: {member.role.toUpperCase()}
-          </Text>
+          <View className="flex-row justify-between items-center mb-3">
+            <Text className="font-extrabold text-black text-lg capitalize">
+              Role: {member.role.toUpperCase()}
+            </Text>
+            {/* Toggle Email vs Username */}
+            <View className="flex-row bg-gray-200 rounded-lg p-1">
+              <TouchableOpacity
+                onPress={() => updateMember(i, 'authMethod', 'email')}
+                className={`px-2 py-1 rounded ${member.authMethod === 'email' ? 'bg-black' : ''}`}
+              >
+                <Text className={`font-extrabold text-xs ${member.authMethod === 'email' ? 'text-safety-yellow' : 'text-gray-700'}`}>
+                  EMAIL
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => updateMember(i, 'authMethod', 'username')}
+                className={`px-2 py-1 rounded ${member.authMethod === 'username' ? 'bg-black' : ''}`}
+              >
+                <Text className={`font-extrabold text-xs ${member.authMethod === 'username' ? 'text-safety-yellow' : 'text-gray-700'}`}>
+                  USERNAME
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
           <TextInput
             className="border-2 border-gray-400 p-3 text-lg font-bold mb-2 bg-white rounded-lg"
-            placeholder="Full Name"
+            placeholder="Full Name / Nom Complet"
             value={member.displayName}
             onChangeText={val => updateMember(i, 'displayName', val)}
           />
 
-          <TextInput
-            className="border-2 border-gray-400 p-3 text-lg font-bold mb-2 bg-white rounded-lg"
-            placeholder="Email Address"
-            value={member.email}
-            onChangeText={val => updateMember(i, 'email', val)}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
+          {member.authMethod === 'username' ? (
+            <TextInput
+              className="border-2 border-gray-400 p-3 text-lg font-bold mb-2 bg-white rounded-lg"
+              placeholder="Username / Nom d'utilisateur (e.g. koffi)"
+              value={member.username}
+              onChangeText={val => updateMember(i, 'username', val)}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          ) : (
+            <TextInput
+              className="border-2 border-gray-400 p-3 text-lg font-bold mb-2 bg-white rounded-lg"
+              placeholder="Email Address"
+              value={member.email}
+              onChangeText={val => updateMember(i, 'email', val)}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+          )}
 
           <TextInput
             className="border-2 border-gray-400 p-3 text-lg font-bold bg-white rounded-lg"
-            placeholder="Initial Password"
+            placeholder="Initial Password / Mot de passe"
             value={member.password}
             onChangeText={val => updateMember(i, 'password', val)}
             secureTextEntry

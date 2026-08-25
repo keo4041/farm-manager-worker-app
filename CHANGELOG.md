@@ -11,6 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > Every change to this codebase MUST be accompanied by an entry in `CHANGELOG.md`, as well as updates to `AGENTS.md` and `README.md`, detailing **What** changed, **Why** it was changed, and **How** it was implemented.
 
+## [1.4.0] - 2026-08-25
+
+### Added & Enhanced
+- **Collision-Free Unique Farm Code Generation & Lookup (`lib/tenant.ts`, `app/register-tenant.tsx`)**:
+  - **WHAT**: Implemented automatic collision-free unique Farm Code generation (`generateUniqueFarmCode`) with prefix parsing (e.g. `AGBE4821`), uniqueness verification against Firestore `tenants` collection, and Farm Code lookup (`lookupTenantByFarmCode`).
+  - **WHY**: To provide a simple, human-readable code that farm workers can enter to identify their organization without needing complex UUIDs or exposing other tenant names.
+  - **HOW**: Added `farmCode` to `Tenant` model, integrated verification loop in `createTenantAccount`, and displayed the generated code prominently in the registration wizard and Team Management header.
+- **Worker Username Authentication & Pseudo-Email Engine (`lib/tenant.ts`, `app/login.tsx`)**:
+  - **WHAT**: Added support for non-email farm workers to log in with **Username + Farm Code + Password**. Added `username` and `authMethod: 'email' | 'username'` to `UserProfile`.
+  - **WHY**: To accommodate field farm workers who do not have corporate or personal email addresses, allowing them to participate in shift logging while retaining Firebase Authentication under the hood.
+  - **HOW**: Created `buildPseudoEmail(username, tenantId)` mapping usernames to `{username}@{tenantId}.farmapp.local`, and upgraded `app/login.tsx` to automatically detect email vs username inputs and conditionally render the Farm Code input.
+- **Team Management Dual-Mode User Provisioning (`app/team-management.tsx`)**:
+  - **WHAT**: Updated the "Add Team Member" modal with an **Account Type Switcher** allowing admins to create either standard Email accounts or Username-based worker accounts.
+  - **WHY**: To allow farm owners and admins to seamlessly provision workers on-site without asking for emails.
+  - **HOW**: Added `authMethod` state toggle, updated `addUserToTenant` to accept username parameters, and added `[USERNAME: name]` badges in the team list.
+- **Modern `expo-file-system` Migration (`lib/sync.ts`)**:
+  - **WHAT**: Migrated `lib/sync.ts` from deprecated string-based functions (`getInfoAsync`, `readAsStringAsync`) to the modern SDK 54+ `File` class (`new File(uri).exists`, `await file.bytes()`).
+  - **WHY**: To prevent deprecation warnings, avoid memory spikes from large Base64 conversions, and leverage Expo's native SharedObjects architecture.
+  - **HOW**: Replaced `FileSystem.getInfoAsync` with `new File(uri).exists` and updated `getBlobFromUri` to directly convert binary `Uint8Array` to `Blob`.
+- **Firestore Security Rules Resolution (`firestore.rules`)**:
+  - **WHAT**: Updated `tenants` collection read rule to allow unauthenticated read during Farm Code lookup at login.
+  - **WHY**: To allow workers to resolve their Farm Code to `tenantId` prior to authenticating.
+  - **HOW**: Adjusted `allow read: if isTenantMember(tenantId) || resource.data.farmCode != null;`.
+
+---
+
 ## [1.3.0] - 2026-08-25
 
 ### Added

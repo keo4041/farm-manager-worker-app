@@ -28,16 +28,16 @@ worker-app/
 ├── app/                        # Expo Router Pages & Navigation Stack
 │   ├── _layout.tsx             # Root layout with header configuration & global CSS
 │   ├── index.tsx               # Main Dashboard (Morning/Evening log entry, Role badge, Team button)
-│   ├── login.tsx               # Worker Authentication screen & Register Tenant link
-│   ├── register-tenant.tsx     # Tenant Onboarding Wizard for Farm Owners & initial team setup
-│   ├── team-management.tsx     # Owner & Admin User/Role Management & License Quotas Inspector
+│   ├── login.tsx               # Worker & Owner Login (Auto-detecting email vs worker username + Farm Code)
+│   ├── register-tenant.tsx     # Tenant Onboarding Wizard for Farm Owners (Auto-generates unique Farm Code)
+│   ├── team-management.tsx     # Owner & Admin User Management (Supports Email and Username worker accounts)
 │   ├── form-wizard.tsx         # Multi-step daily log form (GPS, attendance, livestock, media capture)
 │   ├── sync-status.tsx         # Pending media upload queue & manual sync trigger
 │   └── global.css              # NativeWind / Tailwind CSS entry point
 ├── lib/                        # Shared Utilities & Business Logic
 │   ├── firebase.ts             # Firebase app, Auth persistence, Firestore local cache, Storage init
-│   ├── tenant.ts               # Multi-tenant models, User roles (Owner/Admin/Supervisor/Worker), License hooks
-│   └── sync.ts                 # Pending media queue (AsyncStorage) & upload processing logic
+│   ├── tenant.ts               # Multi-tenant models, Farm Code auto-generator, Pseudo-email auth, RBAC, Quotas
+│   └── sync.ts                 # Modern expo-file-system File API & Resumable Media Sync Queue
 ├── assets/                     # App icons, splash screens, and image assets
 ├── add-test-data.mjs           # Node script for seeding Firestore with sample daily log documents
 ├── firebase.json               # Firebase CLI config mapping firestore & storage security rules
@@ -51,7 +51,6 @@ worker-app/
 └── package.json                # Project dependencies (Expo 55, React 19, Firebase 12, NativeWind 4)
 ```
 
-
 ---
 
 ## 🏗️ Technical Stack & Key Conventions
@@ -60,16 +59,20 @@ worker-app/
 - **Styling**: NativeWind v4 with Tailwind CSS v3 (Custom colors: `safety-yellow` `#FFCC00`).
 - **Database & Auth**: Firebase JS SDK v12.
   - **Firestore Collections**:
-    - `tenants`: Stores tenant profile, `ownerId`, and `license` metadata (`{ planType, maxUsers, maxStorageBytes, currentUsersCount, currentStorageBytes, enforced: false }`).
-    - `users`: Mapped by Auth UID containing `{ tenantId, role: 'owner' | 'admin' | 'supervisor' | 'worker', email, displayName }`.
+    - `tenants`: Stores tenant profile, `farmCode` (unique collision-free code e.g. `AGBE4821`), `ownerId`, and `license` metadata (`{ planType, maxUsers, maxStorageBytes, currentUsersCount, currentStorageBytes, enforced: false }`).
+    - `users`: Mapped by Auth UID containing `{ tenantId, email, username?, authMethod: 'email' | 'username', displayName, role: 'owner' | 'admin' | 'supervisor' | 'worker', createdAt }`.
     - `agbelouve-farm-daily-logs`: Scoped with `tenantId` field on every document.
   - **Auth**: Initialized with `getReactNativePersistence(AsyncStorage)`.
+  - **Worker Pseudo-Email Auth**:
+    - Farm workers without standard email log in with their **Username + Farm Code + Password**.
+    - Farm Code is looked up against `tenants.farmCode` to obtain `tenantId`.
+    - The client deterministically computes `{username}@{tenantId}.farmapp.local` and authenticates via standard Firebase Auth.
 - **Offline Sync Queue**:
   - `lib/sync.ts` stores pending media uploads in `AsyncStorage` under `@farm_manager_sync_queue`.
+  - Uses modern `expo-file-system` `File` class (`new File(uri).exists`, `file.bytes()`) replacing deprecated `getInfoAsync` and `readAsStringAsync`.
   - Media item schema (`PendingMedia`): `id`, `logId`, `tenantId`, `localUri`, `type` (`photo`|`video`|`voice`), `fileName`, `status` (`pending`|`uploading`|`completed`|`failed`), `progress` (0-100), `retryCount`, `errorMessage`, `createdAt`.
   - Uses `uploadBytesResumable` for streaming real-time percentage progress updates to UI modal/badges.
   - Storage paths: `tenants/{tenantId}/logs/{logId}/{fileName}`.
-
 
 - **Hardware Integration**:
   - `expo-location`: High-accuracy GPS tagging for log submissions.
@@ -82,5 +85,5 @@ worker-app/
 
 1. **Inspect Target Files**: Read existing code using line ranges to minimize token consumption.
 2. **Implement Changes**: Ensure TypeScript types and components maintain offline compatibility.
-3. **Verify**: Ensure code compiles without broken imports or missing properties.
+3. **Verify**: Ensure code compiles without broken imports or missing properties (`npx tsc --noEmit`).
 4. **Update Documentation**: Always update `AGENTS.md`, `README.md`, and `CHANGELOG.md` with the **What, Why, and How**.
