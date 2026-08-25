@@ -1,19 +1,33 @@
 import { doc, getDoc, setDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { db, auth } from './firebase';
+import { initializeApp, getApps } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import app, { db, auth } from './firebase';
 
 export type UserRole = 'owner' | 'admin' | 'supervisor' | 'worker';
 export type AuthMethod = 'email' | 'username';
 
-export const PSEUDO_EMAIL_DOMAIN = 'farmapp.local';
+export const PSEUDO_EMAIL_DOMAIN = 'agbelouve.app';
 
 /**
- * Builds a deterministic pseudo-email for workers without standard email
- * Format: {username}@{tenantId}.farmapp.local
+ * Builds a deterministic, RFC-compliant pseudo-email for workers without standard email.
+ * Format: {cleanUsername}.{cleanTenant}@agbelouve.app
+ * Example: koffi.tenant1724622938@agbelouve.app
  */
 export const buildPseudoEmail = (username: string, tenantId: string): string => {
   const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
-  return `${cleanUsername}@${tenantId}.${PSEUDO_EMAIL_DOMAIN}`;
+  const cleanTenant = tenantId.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+  return `${cleanUsername}.${cleanTenant}@${PSEUDO_EMAIL_DOMAIN}`;
+};
+
+/**
+ * Helper to get an isolated secondary auth instance for provisioning team members
+ * without logging out the currently active admin/owner.
+ */
+const getSecondaryAuth = () => {
+  const secondaryAppName = 'SecondaryProvisioningApp';
+  const existingApp = getApps().find(a => a.name === secondaryAppName);
+  const secondaryApp = existingApp || initializeApp(app.options, secondaryAppName);
+  return getAuth(secondaryApp);
 };
 
 export interface UserProfile {
@@ -160,6 +174,7 @@ export const createTenantAccount = async (
   await setDoc(doc(db, 'users', ownerUid), ownerProfile);
 
   // 6. Optionally create initial team members (Email or Username-based)
+  const secondaryAuth = getSecondaryAuth();
   for (const member of initialTeamMembers) {
     if (member.password) {
       let memberEmail = member.email?.trim();
@@ -176,7 +191,7 @@ export const createTenantAccount = async (
 
       if (memberEmail) {
         try {
-          const memberAuth = await createUserWithEmailAndPassword(auth, memberEmail, member.password);
+          const memberAuth = await createUserWithEmailAndPassword(secondaryAuth, memberEmail, member.password);
           const memberProfile: UserProfile = {
             uid: memberAuth.user.uid,
             tenantId,
@@ -188,6 +203,7 @@ export const createTenantAccount = async (
             createdAt: new Date().toISOString(),
           };
           await setDoc(doc(db, 'users', memberAuth.user.uid), memberProfile);
+          await signOut(secondaryAuth);
         } catch (err) {
           console.warn(`Failed to auto-create auth user for ${memberEmail}:`, err);
         }
@@ -234,9 +250,13 @@ export const addUserToTenant = async (
     authMethod = 'email';
   }
 
-  // Create Firebase Auth user
-  const authRes = await createUserWithEmailAndPassword(auth, authEmail, password);
+  // Create Firebase Auth user using isolated secondary instance so admin session remains intact
+  const secondaryAuth = getSecondaryAuth();
+  const authRes = await createUserWithEmailAndPassword(secondaryAuth, authEmail, password);
   const uid = authRes.user.uid;
+  try {
+    await signOut(secondaryAuth);
+  } catch {}
 
   const userProfile: UserProfile = {
     uid,

@@ -1,8 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { File } from 'expo-file-system';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { createUploadTask, FileSystemUploadType } from 'expo-file-system/legacy';
+import { ref, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
-import { storage, db } from './firebase';
+import { storage, db, auth } from './firebase';
 
 export interface PendingMedia {
   id: string;
@@ -106,71 +107,6 @@ const getContentType = (type: 'photo' | 'video' | 'voice', fileName: string): st
   return 'application/octet-stream';
 };
 
-/**
- * Safely converts local URI to a Blob or Uint8Array for Firebase Storage upload.
- * In React Native, XMLHttpRequest with responseType = 'blob' is the standard way
- * to obtain a native Blob without hitting the "Creating blobs from 'ArrayBuffer'
- * and 'ArrayBufferView' are not supported" limitation.
- */
-const getUploadDataFromUri = async (
-  uri: string
-): Promise<{ data: Blob | Uint8Array; cleanup?: () => void }> => {
-  // Strategy 1: XMLHttpRequest with responseType = 'blob' (Standard React Native native blob module)
-  try {
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.onload = () => {
-        if (xhr.response) {
-          resolve(xhr.response);
-        } else {
-          reject(new Error('XMLHttpRequest returned empty response'));
-        }
-      };
-      xhr.onerror = (e) => {
-        reject(new TypeError(`XHR blob conversion failed: ${e}`));
-      };
-      xhr.responseType = 'blob';
-      xhr.open('GET', uri, true);
-      xhr.send(null);
-    });
-
-    return {
-      data: blob,
-      cleanup: () => {
-        try {
-          (blob as any)?.close?.();
-        } catch {
-          // Ignore close errors
-        }
-      },
-    };
-  } catch (xhrErr) {
-    // Strategy 2: Web / standard fetch fallback
-    try {
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      return {
-        data: blob,
-        cleanup: () => {
-          try {
-            (blob as any)?.close?.();
-          } catch {}
-        },
-      };
-    } catch (fetchErr) {
-      // Strategy 3: Direct binary bytes from expo-file-system File API passed directly to uploadBytesResumable (without new Blob)
-      try {
-        const file = new File(uri);
-        const bytes = await file.bytes();
-        return { data: bytes };
-      } catch (fileErr) {
-        console.error('Error reading file for upload:', fileErr);
-        throw fileErr;
-      }
-    }
-  }
-};
-
 export type ProgressCallback = (
   itemId: string,
   progress: number,
@@ -190,7 +126,6 @@ export const processSyncQueue = async (onProgress?: ProgressCallback) => {
   let failed = 0;
 
   for (const item of pendingItems) {
-    let uploadData: { data: Blob | Uint8Array; cleanup?: () => void } | null = null;
     try {
       // 1. Verify local file existence using new File API
       const file = new File(item.localUri);
@@ -207,30 +142,82 @@ export const processSyncQueue = async (onProgress?: ProgressCallback) => {
       // 2. Mark item as uploading
       await updateItemInQueue(item.id, {
         status: 'uploading',
-        progress: 10,
+        progress: 5,
         retryCount: item.retryCount + 1,
       });
-      if (onProgress) onProgress(item.id, 10, 'uploading');
+      if (onProgress) onProgress(item.id, 5, 'uploading');
 
-      // 3. Obtain upload payload and create Storage reference (tenant-isolated path)
-      uploadData = await getUploadDataFromUri(item.localUri);
+      // 3. Prepare tenant path, storage target, and authentication
       const tenantPath = item.tenantId ? `tenants/${item.tenantId}/` : '';
-      const storageRef = ref(storage, `${tenantPath}logs/${item.logId}/${item.fileName}`);
-      const metadata = {
-        contentType: getContentType(item.type, item.fileName),
+      const fullPath = `${tenantPath}logs/${item.logId}/${item.fileName}`;
+      const storageRef = ref(storage, fullPath);
+      const contentType = getContentType(item.type, item.fileName);
+
+      let idToken: string | undefined;
+      try {
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          idToken = await currentUser.getIdToken();
+        }
+      } catch (tokenErr) {
+        console.warn('Could not get auth token for upload', tokenErr);
+      }
+
+      const bucket = storage.app.options.storageBucket || 'studio-9764494180-2cb45.firebasestorage.app';
+      const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?name=${encodeURIComponent(fullPath)}`;
+
+      const headers: Record<string, string> = {
+        'Content-Type': contentType,
       };
+      if (idToken) {
+        headers['Authorization'] = `Firebase ${idToken}`;
+      }
 
-      if (onProgress) onProgress(item.id, 35, 'uploading');
-      await updateItemInQueue(item.id, { progress: 35 });
+      // 4. Native binary streaming upload directly from filesystem to Firebase Storage
+      const uploadTask = createUploadTask(
+        uploadUrl,
+        item.localUri,
+        {
+          headers,
+          httpMethod: 'POST',
+          uploadType: FileSystemUploadType.BINARY_CONTENT,
+        },
+        progress => {
+          if (progress.totalBytesExpectedToSend > 0) {
+            const pct = Math.round(
+              (progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100
+            );
+            updateItemInQueue(item.id, { progress: pct });
+            if (onProgress) onProgress(item.id, pct, 'uploading');
+          }
+        }
+      );
 
-      // 4. Upload with uploadBytes (Reliable single-shot multipart upload in React Native)
-      await uploadBytes(storageRef, uploadData.data, metadata);
+      const uploadResult = await uploadTask.uploadAsync();
 
-      if (onProgress) onProgress(item.id, 85, 'uploading');
-      await updateItemInQueue(item.id, { progress: 85 });
+      if (!uploadResult || uploadResult.status < 200 || uploadResult.status >= 300) {
+        throw new Error(
+          `Upload failed (HTTP ${uploadResult?.status || 'Unknown'}): ${uploadResult?.body || 'No response'}`
+        );
+      }
 
-      // 5. Get Public Download URL
-      const publicUrl = await getDownloadURL(storageRef);
+      // 5. Obtain Public Download URL
+      let publicUrl: string;
+      try {
+        publicUrl = await getDownloadURL(storageRef);
+      } catch {
+        try {
+          const responseData = JSON.parse(uploadResult.body);
+          const token = responseData.downloadTokens;
+          if (token) {
+            publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(fullPath)}?alt=media&token=${token}`;
+          } else {
+            publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(fullPath)}?alt=media`;
+          }
+        } catch (e: any) {
+          throw new Error('Failed to resolve download URL: ' + e.message);
+        }
+      }
 
       // 6. Update Firestore document
       const logRef = doc(db, 'agbelouve-farm-daily-logs', item.logId);
@@ -255,12 +242,8 @@ export const processSyncQueue = async (onProgress?: ProgressCallback) => {
       });
       if (onProgress) onProgress(item.id, item.progress, 'failed', errorMsg);
       failed++;
-      // Stop loop if offline/network error occurs
+      // Stop loop if network error occurs
       break;
-    } finally {
-      if (uploadData?.cleanup) {
-        uploadData.cleanup();
-      }
     }
   }
 

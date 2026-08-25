@@ -66,17 +66,17 @@ worker-app/
     - Initialized with `getReactNativePersistence(AsyncStorage)`.
     - **Centralized Auth Guard (`app/_layout.tsx`)**: Listens to Firebase `onAuthStateChanged` and route segments (`useSegments()`). Automatically intercepts unauthenticated access to protected routes (`/`, `/form-wizard`, `/sync-status`, `/team-management`) and redirects to `/login`. Automatically routes authenticated users away from `/login` and `/register-tenant` back to `/`. Displays a branded splash spinner during session restoration.
     - **Session Logout & Farm Code Badge (`app/index.tsx`)**: Provides native `signOut(auth)` action with confirmation dialog and prominent Farm Code display.
-  - **Worker Pseudo-Email Auth**:
+  - **Worker Pseudo-Email Auth & Secondary Provisioning**:
     - Farm workers without standard email log in with their **Username + Farm Code + Password**.
     - Farm Code is looked up against `tenants.farmCode` to obtain `tenantId`.
-    - The client deterministically computes `{username}@{tenantId}.farmapp.local` and authenticates via standard Firebase Auth.
+    - The client deterministically computes RFC-compliant `{cleanUsername}.{cleanTenant}@agbelouve.app` (using standard ICANN `.app` TLD and alphanumeric labels without underscores) and authenticates via standard Firebase Auth.
+    - Owner/Admin team member creation uses an isolated secondary Firebase app instance (`SecondaryProvisioningApp`) so user provisioning never logs out the active admin session.
 - **Offline Sync Queue & Firebase Storage Uploads**:
   - `lib/sync.ts` stores pending media uploads in `AsyncStorage` under `@farm_manager_sync_queue`.
-  - Media file conversion (`getUploadDataFromUri`): Uses native `XMLHttpRequest` with `responseType = 'blob'` to stream files directly through React Native's native `BlobModule` avoiding `"Creating blobs from 'ArrayBuffer' and 'ArrayBufferView' are not supported"` errors, with web `fetch` and Expo `File.bytes()` (`Uint8Array`) fallback.
-  - Upload Execution (`uploadBytes`): Uses direct multipart `uploadBytes` instead of `uploadBytesResumable` to prevent React Native XHR CORS header missing errors (`X-Goog-Upload-URL`) that trigger `storage/retry-limit-exceeded` hangs.
-  - Automatically manages memory by invoking native `blob.close()` after upload completion or error.
-  - Configures `storage.maxUploadRetryTime = 30000` and `storage.maxOperationRetryTime = 30000` in `lib/firebase.ts` to prevent indefinite blocking.
-  - Passes explicit MIME metadata (`contentType: 'image/jpeg' | 'video/mp4' | 'audio/m4a' | ...`) to `uploadBytes`.
+  - **Native Binary Streaming (`createUploadTask` with `BINARY_CONTENT`)**: Uses Expo FileSystem's native `createUploadTask` to stream local `file://` URIs directly to the Firebase Cloud Storage REST endpoint (`https://firebasestorage.googleapis.com/v0/b/{bucket}/o?name={path}`).
+  - **Zero Bridge / Zero Blob Overhead**: Bypasses React Native's `BlobManager` and JavaScript memory altogether, permanently preventing `"Creating blobs from 'ArrayBuffer' and 'ArrayBufferView' are not supported"` errors and memory bloat.
+  - **Real-Time Progress**: Automatically computes real-time upload percentage (`totalBytesSent / totalBytesExpectedToSend`) from native progress callbacks.
+  - **Authenticated Uploads**: Attaches `Authorization: Firebase {idToken}` dynamically from `auth.currentUser.getIdToken()`.
   - Media item schema (`PendingMedia`): `id`, `logId`, `tenantId`, `localUri`, `type` (`photo`|`video`|`voice`), `fileName`, `status` (`pending`|`uploading`|`completed`|`failed`), `progress` (0-100), `retryCount`, `errorMessage`, `createdAt`.
   - Storage paths: `tenants/{tenantId}/logs/{logId}/{fileName}`.
 

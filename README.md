@@ -69,10 +69,10 @@ flowchart TD
 
 - **Multi-Tenant Architecture**: Full tenant data isolation using `tenantId` scoped collections and Cloud Storage buckets.
 - **Collision-Free Unique Farm Codes**: Auto-generates unique 6-8 character farm codes (e.g. `AGBE4821`) during registration so workers can quickly connect without complex IDs.
-- **Worker Username Authentication**: Farm workers without email addresses can connect using their **Username + Farm Code + Password**, mapped securely to deterministic pseudo-emails behind the scenes.
+- **Worker Username Authentication**: Farm workers without email addresses can connect using their **Username + Farm Code + Password**, mapped securely to deterministic RFC-compliant pseudo-emails (`{username}.{cleanTenant}@agbelouve.app`) and provisioned via isolated secondary auth instances.
 - **Smart Login Auto-Detection**: Single login input field automatically detects email vs worker username and conditionally prompts for the Farm Code.
 - **Centralized Auth Guards & Route Protection**: Automatic session listener intercepting unauthenticated access across all protected routes (`/`, `/form-wizard`, `/sync-status`, `/team-management`) and redirecting users to `/login` or `/register-tenant` with smooth loading splash feedback.
-- **Modern File System & Native Blob Pipeline**: Cross-platform file handling using React Native's native `XMLHttpRequest` Blob module and `expo-file-system` `File` class, with automatic memory reclamation (`blob.close()`) to avoid ArrayBuffer conversion errors and out-of-memory overhead.
+- **Modern File System & Native Binary Streaming**: Zero-overhead binary upload pipeline using Expo FileSystem's `createUploadTask` (`BINARY_CONTENT`), streaming directly from device storage to Firebase Cloud Storage with real-time percentage progress and zero bridge memory bloat.
 - **Role-Based Access Control (RBAC)**: Support for four user roles:
   - **Owner**: Full tenant administration, team creation, and quota monitoring.
   - **Admin**: User provisioning and farm operational oversight.
@@ -82,7 +82,7 @@ flowchart TD
 - **Licensing & Quotas Hooks**: Built-in quota check hooks (`checkLicenseQuota`) for tracking active user counts and Cloud Storage bytes.
 - **Shift Log Wizards**: Guided forms for **MORNING** and **EVENING** farm operations.
 - **GPS Location Tagging**: Automatic GPS coordinate capturing for geofence validation.
-- **Rich Media Attachments & Direct Storage Uploads**: Photos, videos, and voice note recordings with robust direct multipart upload pipeline (`uploadBytes`) avoiding resumable session negotiation hangs.
+- **Rich Media Attachments & Real-Time Sync**: Photos, videos, and voice note recordings streamed natively with real-time upload progress.
 - **Offline Sync Queue**: Visual queue dashboard (`sync-status.tsx`) for tracking offline uploads and triggering manual syncs.
 - **Bilingual Interface**: Dual English / French labeling.
 

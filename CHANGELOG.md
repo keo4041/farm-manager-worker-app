@@ -11,6 +11,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > Every change to this codebase MUST be accompanied by an entry in `CHANGELOG.md`, as well as updates to `AGENTS.md` and `README.md`, detailing **What** changed, **Why** it was changed, and **How** it was implemented.
 
+## [1.5.3] - 2026-08-25
+
+### Fixed & Enhanced
+- **Worker Username Pseudo-Email RFC Compliance & Secondary Auth Provisioning (`lib/tenant.ts`)**:
+  - **WHAT**: Fixed `firebase: Error (auth/invalid-email)` during worker username creation and prevented admin session sign-out during user provisioning.
+  - **WHY**:
+    1. Firebase Auth validates that email addresses adhere to standard RFC 5322 specs with valid ICANN public TLDs and disallows underscores (`_`) in domain names. The previous format `{username}@{tenantId}.farmapp.local` failed validation because `.local` is not an accepted public TLD and `tenantId` (e.g. `tenant_1724622...`) contained underscores in the hostname.
+    2. In the Firebase Client JS SDK, calling `createUserWithEmailAndPassword` on the primary `auth` instance automatically mutates the client state to log in as the newly created user, prematurely ending the active Admin/Owner session.
+  - **HOW**:
+    1. Updated `buildPseudoEmail` in `lib/tenant.ts` to output RFC-compliant `{cleanUsername}.{cleanTenant}@agbelouve.app` (e.g., `koffi.tenant1724622938@agbelouve.app`).
+    2. Implemented `getSecondaryAuth()` using an isolated Firebase secondary app instance (`SecondaryProvisioningApp`) to create team member accounts in the background without affecting the admin's active session.
+
+## [1.5.2] - 2026-08-25
+
+### Fixed & Enhanced
+- **Native Expo FileSystem Binary Streaming Upload (`lib/sync.ts`)**:
+  - **WHAT**: Migrated media upload pipeline to Expo FileSystem's native `createUploadTask` with `FileSystemUploadType.BINARY_CONTENT`, streaming directly to Firebase Storage REST endpoint.
+  - **WHY**: In React Native, JS-based Firebase SDK methods (`uploadBytes`, `uploadBytesResumable`, `new Blob([bytes])`) trigger `"Creating blobs from 'ArrayBuffer' and 'ArrayBufferView' are not supported"` exceptions in `BlobManager.js` and fail with `IllegalArgumentException` on `file://` local URIs in Android OkHttp.
+  - **HOW**:
+    1. Replaced all JS Blob conversions and Firebase SDK multipart upload methods with native `createUploadTask` binary streaming.
+    2. Attached `Authorization: Firebase {idToken}` dynamically from `auth.currentUser.getIdToken()`.
+    3. Streamed native progress updates (`totalBytesSent / totalBytesExpectedToSend`) to queue UI.
+    4. Automatically resolved download URLs via Firebase Storage metadata.
+
 ## [1.5.1] - 2026-08-25
 
 ### Fixed & Enhanced
