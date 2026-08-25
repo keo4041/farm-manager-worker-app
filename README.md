@@ -71,6 +71,7 @@ flowchart TD
 - **Collision-Free Unique Farm Codes**: Auto-generates unique 6-8 character farm codes (e.g. `AGBE4821`) during registration so workers can quickly connect without complex IDs.
 - **Worker Username Authentication**: Farm workers without email addresses can connect using their **Username + Farm Code + Password**, mapped securely to deterministic pseudo-emails behind the scenes.
 - **Smart Login Auto-Detection**: Single login input field automatically detects email vs worker username and conditionally prompts for the Farm Code.
+- **Centralized Auth Guards & Route Protection**: Automatic session listener intercepting unauthenticated access across all protected routes (`/`, `/form-wizard`, `/sync-status`, `/team-management`) and redirecting users to `/login` or `/register-tenant` with smooth loading splash feedback.
 - **Modern File System & Native Blob Pipeline**: Cross-platform file handling using React Native's native `XMLHttpRequest` Blob module and `expo-file-system` `File` class, with automatic memory reclamation (`blob.close()`) to avoid ArrayBuffer conversion errors and out-of-memory overhead.
 - **Role-Based Access Control (RBAC)**: Support for four user roles:
   - **Owner**: Full tenant administration, team creation, and quota monitoring.

@@ -62,7 +62,10 @@ worker-app/
     - `tenants`: Stores tenant profile, `farmCode` (unique collision-free code e.g. `AGBE4821`), `ownerId`, and `license` metadata (`{ planType, maxUsers, maxStorageBytes, currentUsersCount, currentStorageBytes, enforced: false }`).
     - `users`: Mapped by Auth UID containing `{ tenantId, email, username?, authMethod: 'email' | 'username', displayName, role: 'owner' | 'admin' | 'supervisor' | 'worker', createdAt }`.
     - `agbelouve-farm-daily-logs`: Scoped with `tenantId` field on every document.
-  - **Auth**: Initialized with `getReactNativePersistence(AsyncStorage)`.
+  - **Auth & Centralized Route Protection**:
+    - Initialized with `getReactNativePersistence(AsyncStorage)`.
+    - **Centralized Auth Guard (`app/_layout.tsx`)**: Listens to Firebase `onAuthStateChanged` and route segments (`useSegments()`). Automatically intercepts unauthenticated access to protected routes (`/`, `/form-wizard`, `/sync-status`, `/team-management`) and redirects to `/login`. Automatically routes authenticated users away from `/login` and `/register-tenant` back to `/`. Displays a branded splash spinner during session restoration.
+    - **Session Logout & Farm Code Badge (`app/index.tsx`)**: Provides native `signOut(auth)` action with confirmation dialog and prominent Farm Code display.
   - **Worker Pseudo-Email Auth**:
     - Farm workers without standard email log in with their **Username + Farm Code + Password**.
     - Farm Code is looked up against `tenants.farmCode` to obtain `tenantId`.

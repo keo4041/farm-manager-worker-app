@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { getSyncQueue, processSyncQueue } from '../lib/sync';
 import { getUserProfile, getTenantDetails, UserProfile, Tenant } from '../lib/tenant';
@@ -11,15 +12,16 @@ export default function Home() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [tenant, setTenant] = useState<Tenant | null>(null);
 
-  const loadUserData = async () => {
-    const user = auth.currentUser;
-    if (user) {
-      const prof = await getUserProfile(user.uid);
+  const loadUserData = async (uid: string) => {
+    try {
+      const prof = await getUserProfile(uid);
       setUserProfile(prof);
       if (prof?.tenantId) {
         const t = await getTenantDetails(prof.tenantId);
         setTenant(t);
       }
+    } catch (e) {
+      console.error('Error loading user data:', e);
     }
   };
 
@@ -38,30 +40,73 @@ export default function Home() {
   };
 
   useEffect(() => {
-    loadUserData();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        loadUserData(user.uid);
+      } else {
+        setUserProfile(null);
+        setTenant(null);
+      }
+    });
+
     checkQueue();
+    return unsubscribe;
   }, []);
+
+  const handleSignOut = () => {
+    Alert.alert(
+      'Log Out / Déconnexion',
+      'Are you sure you want to log out? / Voulez-vous vraiment vous déconnecter ?',
+      [
+        { text: 'Cancel / Annuler', style: 'cancel' },
+        {
+          text: 'Log Out / Déconnexion',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOut(auth);
+            } catch (err: any) {
+              Alert.alert('Sign Out Error', err.message);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const isManagementRole = userProfile?.role === 'owner' || userProfile?.role === 'admin';
 
   return (
     <ScrollView className="flex-1 bg-white p-4">
       {/* Tenant Header & User Role Badge */}
-      <View className="bg-black p-4 rounded-2xl mb-4 border-2 border-safety-yellow shadow-md flex-row justify-between items-center">
-        <View className="flex-1">
-          <Text className="text-safety-yellow font-extrabold text-2xl">
-            {tenant?.name || 'Agbelouve Farm Manager'}
-          </Text>
-          <Text className="text-white font-bold text-xs mt-1">
-            {userProfile?.displayName || userProfile?.email || 'Worker Portal'}
-          </Text>
+      <View className="bg-black p-4 rounded-2xl mb-4 border-2 border-safety-yellow shadow-md">
+        <View className="flex-row justify-between items-start">
+          <View className="flex-1">
+            <Text className="text-safety-yellow font-extrabold text-2xl">
+              {tenant?.name || 'Agbelouve Farm Manager'}
+            </Text>
+            <Text className="text-white font-bold text-xs mt-1">
+              {userProfile?.displayName || userProfile?.email || 'Worker Portal'}
+            </Text>
+          </View>
+
+          {userProfile?.role && (
+            <View className="bg-safety-yellow px-3 py-1 rounded-full border border-black ml-2">
+              <Text className="text-black font-extrabold text-xs uppercase">{userProfile.role}</Text>
+            </View>
+          )}
         </View>
 
-        {userProfile?.role && (
-          <View className="bg-safety-yellow px-3 py-1 rounded-full border border-black ml-2">
-            <Text className="text-black font-extrabold text-xs uppercase">{userProfile.role}</Text>
+        {tenant?.farmCode ? (
+          <View className="mt-3 pt-3 border-t border-gray-800 flex-row items-center justify-between">
+            <Text className="text-gray-400 font-bold text-xs uppercase">Farm Code / Code Ferme:</Text>
+            <View className="bg-gray-800 px-3 py-1 rounded-md border border-safety-yellow">
+              <Text className="text-safety-yellow font-extrabold text-sm tracking-wider">
+                {tenant.farmCode}
+              </Text>
+            </View>
           </View>
-        )}
+        ) : null}
       </View>
 
       {/* Sync Status Banner */}
@@ -114,7 +159,7 @@ export default function Home() {
         </TouchableOpacity>
         
         <TouchableOpacity 
-          className="bg-gray-200 w-full rounded-xl items-center justify-between h-16 px-6 border-2 border-black flex-row mb-8"
+          className="bg-gray-200 w-full rounded-xl items-center justify-between h-16 px-6 border-2 border-black flex-row"
           onPress={() => router.push('/sync-status')}
         >
           <Text className="text-black font-extrabold text-lg">View Sync Queue / File d'attente</Text>
@@ -123,6 +168,16 @@ export default function Home() {
               <Text className="text-white font-extrabold text-sm">{pendingCount}</Text>
             </View>
           )}
+        </TouchableOpacity>
+
+        {/* Log Out Button */}
+        <TouchableOpacity 
+          className="bg-red-50 border-2 border-red-500 w-full rounded-xl items-center justify-center p-4 mb-8"
+          onPress={handleSignOut}
+        >
+          <Text className="text-red-700 font-extrabold text-base">
+            Log Out / Déconnexion
+          </Text>
         </TouchableOpacity>
       </View>
     </ScrollView>

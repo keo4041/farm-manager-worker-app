@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > Every change to this codebase MUST be accompanied by an entry in `CHANGELOG.md`, as well as updates to `AGENTS.md` and `README.md`, detailing **What** changed, **Why** it was changed, and **How** it was implemented.
 
+## [1.5.0] - 2026-08-25
+
+### Added & Enhanced
+- **Centralized Auth Guards & Session Protection (`app/_layout.tsx`, `app/index.tsx`)**:
+  - **WHAT**: Implemented automatic route protection ensuring unauthenticated users are directed to the login/signup screens (`/login` or `/register-tenant`), while authenticated users are directed to the home dashboard (`/`). Added native Sign Out functionality and Farm Code display on the dashboard.
+  - **WHY**: To prevent unauthenticated users from accessing protected views (`/`, `/form-wizard`, `/sync-status`, `/team-management`) and ensure consistent session lifecycle management across the app.
+  - **HOW**: 
+    1. Added `onAuthStateChanged` and `useSegments()` listeners in `app/_layout.tsx` to guard all protected routes and redirect unauthenticated users to `/login`.
+    2. Implemented a branded loading screen during initial session restoration to prevent UI layout flashes.
+    3. Added reactive auth listener, Farm Code badge, and a "Log Out / Déconnexion" button with confirmation alert in `app/index.tsx`.
+
 ## [1.4.1] - 2026-08-25
 
 ### Fixed & Enhanced
