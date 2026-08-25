@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { File } from 'expo-file-system';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { storage, db } from './firebase';
 
@@ -207,10 +207,10 @@ export const processSyncQueue = async (onProgress?: ProgressCallback) => {
       // 2. Mark item as uploading
       await updateItemInQueue(item.id, {
         status: 'uploading',
-        progress: 5,
+        progress: 10,
         retryCount: item.retryCount + 1,
       });
-      if (onProgress) onProgress(item.id, 5, 'uploading');
+      if (onProgress) onProgress(item.id, 10, 'uploading');
 
       // 3. Obtain upload payload and create Storage reference (tenant-isolated path)
       uploadData = await getUploadDataFromUri(item.localUri);
@@ -220,29 +220,14 @@ export const processSyncQueue = async (onProgress?: ProgressCallback) => {
         contentType: getContentType(item.type, item.fileName),
       };
 
-      // 4. Upload with uploadBytesResumable for real-time progress callbacks
-      const uploadTask = uploadBytesResumable(storageRef, uploadData.data, metadata);
+      if (onProgress) onProgress(item.id, 35, 'uploading');
+      await updateItemInQueue(item.id, { progress: 35 });
 
-      await new Promise<void>((resolve, reject) => {
-        uploadTask.on(
-          'state_changed',
-          snapshot => {
-            if (snapshot.totalBytes > 0) {
-              const pct = Math.round(
-                (snapshot.bytesTransferred / snapshot.totalBytes) * 100
-              );
-              updateItemInQueue(item.id, { progress: pct });
-              if (onProgress) onProgress(item.id, pct, 'uploading');
-            }
-          },
-          error => {
-            reject(error);
-          },
-          () => {
-            resolve();
-          }
-        );
-      });
+      // 4. Upload with uploadBytes (Reliable single-shot multipart upload in React Native)
+      await uploadBytes(storageRef, uploadData.data, metadata);
+
+      if (onProgress) onProgress(item.id, 85, 'uploading');
+      await updateItemInQueue(item.id, { progress: 85 });
 
       // 5. Get Public Download URL
       const publicUrl = await getDownloadURL(storageRef);

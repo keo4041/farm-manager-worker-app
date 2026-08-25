@@ -82,7 +82,7 @@ flowchart TD
 - **Licensing & Quotas Hooks**: Built-in quota check hooks (`checkLicenseQuota`) for tracking active user counts and Cloud Storage bytes.
 - **Shift Log Wizards**: Guided forms for **MORNING** and **EVENING** farm operations.
 - **GPS Location Tagging**: Automatic GPS coordinate capturing for geofence validation.
-- **Rich Media Attachments**: Photos, videos, and voice note recordings with resumable upload progress and explicit MIME type tagging.
+- **Rich Media Attachments & Direct Storage Uploads**: Photos, videos, and voice note recordings with robust direct multipart upload pipeline (`uploadBytes`) avoiding resumable session negotiation hangs.
 - **Offline Sync Queue**: Visual queue dashboard (`sync-status.tsx`) for tracking offline uploads and triggering manual syncs.
 - **Bilingual Interface**: Dual English / French labeling.
 

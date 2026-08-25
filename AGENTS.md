@@ -73,10 +73,11 @@ worker-app/
 - **Offline Sync Queue & Firebase Storage Uploads**:
   - `lib/sync.ts` stores pending media uploads in `AsyncStorage` under `@farm_manager_sync_queue`.
   - Media file conversion (`getUploadDataFromUri`): Uses native `XMLHttpRequest` with `responseType = 'blob'` to stream files directly through React Native's native `BlobModule` avoiding `"Creating blobs from 'ArrayBuffer' and 'ArrayBufferView' are not supported"` errors, with web `fetch` and Expo `File.bytes()` (`Uint8Array`) fallback.
+  - Upload Execution (`uploadBytes`): Uses direct multipart `uploadBytes` instead of `uploadBytesResumable` to prevent React Native XHR CORS header missing errors (`X-Goog-Upload-URL`) that trigger `storage/retry-limit-exceeded` hangs.
   - Automatically manages memory by invoking native `blob.close()` after upload completion or error.
-  - Passes explicit MIME metadata (`contentType: 'image/jpeg' | 'video/mp4' | 'audio/m4a' | ...`) to `uploadBytesResumable`.
+  - Configures `storage.maxUploadRetryTime = 30000` and `storage.maxOperationRetryTime = 30000` in `lib/firebase.ts` to prevent indefinite blocking.
+  - Passes explicit MIME metadata (`contentType: 'image/jpeg' | 'video/mp4' | 'audio/m4a' | ...`) to `uploadBytes`.
   - Media item schema (`PendingMedia`): `id`, `logId`, `tenantId`, `localUri`, `type` (`photo`|`video`|`voice`), `fileName`, `status` (`pending`|`uploading`|`completed`|`failed`), `progress` (0-100), `retryCount`, `errorMessage`, `createdAt`.
-  - Uses `uploadBytesResumable` for streaming real-time percentage progress updates to UI modal/badges.
   - Storage paths: `tenants/{tenantId}/logs/{logId}/{fileName}`.
 
 - **Hardware Integration**:

@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > Every change to this codebase MUST be accompanied by an entry in `CHANGELOG.md`, as well as updates to `AGENTS.md` and `README.md`, detailing **What** changed, **Why** it was changed, and **How** it was implemented.
 
+## [1.5.1] - 2026-08-25
+
+### Fixed & Enhanced
+- **Firebase Storage Upload Protocol & Timeout Fix (`lib/sync.ts`, `lib/firebase.ts`, `storage.rules`)**:
+  - **WHAT**: Resolved the `Firebase Storage: max retry time for operation exceeded (storage/retry-limit-exceeded)` error where uploads hung indefinitely.
+  - **WHY**: In React Native, `uploadBytesResumable` initiates a Google Cloud Storage resumable upload session that requires reading the `X-Goog-Upload-URL` response header. Because React Native's `XMLHttpRequest` networking layer does not expose this custom header from CORS responses, Firebase Storage enters an endless retry loop that exhausts `maxUploadRetryTime`.
+  - **HOW**:
+    1. Switched from `uploadBytesResumable` to direct multipart `uploadBytes` in `lib/sync.ts`, completing uploads directly in a single HTTP transaction.
+    2. Configured `maxUploadRetryTime` and `maxOperationRetryTime` to 30,000ms (30 seconds) in `lib/firebase.ts` to prevent indefinite blocking on network drops.
+    3. Strengthened `storage.rules` with safety checks (`firestore.exists`) to avoid authorization latency and runtime rule crashes.
+
 ## [1.5.0] - 2026-08-25
 
 ### Added & Enhanced

@@ -26,4 +26,8 @@ export const db = initializeFirestore(app, {
 });
 
 export const storage = getStorage(app);
+// Limit retry timeouts to 30 seconds to prevent hanging on network disruptions
+storage.maxUploadRetryTime = 30000;
+storage.maxOperationRetryTime = 30000;
+
 export default app;
