@@ -27,16 +27,22 @@ To avoid executing redundant directory listings or broad text searches, refer to
 worker-app/
 ├── app/                        # Expo Router Pages & Navigation Stack
 │   ├── _layout.tsx             # Root layout with header configuration & global CSS
-│   ├── index.tsx               # Main Dashboard (Morning/Evening log entry, Sync queue status)
-│   ├── login.tsx               # Worker Authentication screen (Firebase Auth)
+│   ├── index.tsx               # Main Dashboard (Morning/Evening log entry, Role badge, Team button)
+│   ├── login.tsx               # Worker Authentication screen & Register Tenant link
+│   ├── register-tenant.tsx     # Tenant Onboarding Wizard for Farm Owners & initial team setup
+│   ├── team-management.tsx     # Owner & Admin User/Role Management & License Quotas Inspector
 │   ├── form-wizard.tsx         # Multi-step daily log form (GPS, attendance, livestock, media capture)
 │   ├── sync-status.tsx         # Pending media upload queue & manual sync trigger
 │   └── global.css              # NativeWind / Tailwind CSS entry point
 ├── lib/                        # Shared Utilities & Business Logic
 │   ├── firebase.ts             # Firebase app, Auth persistence, Firestore local cache, Storage init
+│   ├── tenant.ts               # Multi-tenant models, User roles (Owner/Admin/Supervisor/Worker), License hooks
 │   └── sync.ts                 # Pending media queue (AsyncStorage) & upload processing logic
 ├── assets/                     # App icons, splash screens, and image assets
 ├── add-test-data.mjs           # Node script for seeding Firestore with sample daily log documents
+├── firebase.json               # Firebase CLI config mapping firestore & storage security rules
+├── firestore.rules             # Production security rules enforcing multi-tenant isolation & RBAC
+├── storage.rules               # Production GCS security rules scoping storage by tenantId
 ├── app.json                    # Expo config (permissions for Camera, Audio, Location, bundle ID)
 ├── babel.config.js             # Babel setup with NativeWind preset
 ├── metro.config.js             # Metro bundler config with NativeWind CSS wrapper
@@ -45,6 +51,7 @@ worker-app/
 └── package.json                # Project dependencies (Expo 55, React 19, Firebase 12, NativeWind 4)
 ```
 
+
 ---
 
 ## 🏗️ Technical Stack & Key Conventions
@@ -52,14 +59,17 @@ worker-app/
 - **Framework**: React Native 0.83 with Expo SDK 55 & Expo Router v55.
 - **Styling**: NativeWind v4 with Tailwind CSS v3 (Custom colors: `safety-yellow` `#FFCC00`).
 - **Database & Auth**: Firebase JS SDK v12.
-  - **Firestore**: Initialized with `persistentLocalCache()` for offline support.
+  - **Firestore Collections**:
+    - `tenants`: Stores tenant profile, `ownerId`, and `license` metadata (`{ planType, maxUsers, maxStorageBytes, currentUsersCount, currentStorageBytes, enforced: false }`).
+    - `users`: Mapped by Auth UID containing `{ tenantId, role: 'owner' | 'admin' | 'supervisor' | 'worker', email, displayName }`.
+    - `agbelouve-farm-daily-logs`: Scoped with `tenantId` field on every document.
   - **Auth**: Initialized with `getReactNativePersistence(AsyncStorage)`.
-  - **Collection**: `agbelouve-farm-daily-logs`
 - **Offline Sync Queue**:
   - `lib/sync.ts` stores pending media uploads in `AsyncStorage` under `@farm_manager_sync_queue`.
-  - Media item schema (`PendingMedia`): `id`, `logId`, `localUri`, `type` (`photo`|`video`|`voice`), `fileName`, `status` (`pending`|`uploading`|`completed`|`failed`), `progress` (0-100), `retryCount`, `errorMessage`, `createdAt`.
+  - Media item schema (`PendingMedia`): `id`, `logId`, `tenantId`, `localUri`, `type` (`photo`|`video`|`voice`), `fileName`, `status` (`pending`|`uploading`|`completed`|`failed`), `progress` (0-100), `retryCount`, `errorMessage`, `createdAt`.
   - Uses `uploadBytesResumable` for streaming real-time percentage progress updates to UI modal/badges.
-  - Storage paths: `logs/{logId}/{fileName}`.
+  - Storage paths: `tenants/{tenantId}/logs/{logId}/{fileName}`.
+
 
 - **Hardware Integration**:
   - `expo-location`: High-accuracy GPS tagging for log submissions.

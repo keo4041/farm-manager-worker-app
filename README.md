@@ -12,8 +12,9 @@ The app is architected with an **offline-first pattern**. All Firestore data mut
 flowchart TD
     subgraph MobileApp["Expo React Native Worker App"]
         UI["App Screens (app/)
-        - index.tsx (Home Dashboard)
-        - login.tsx (Authentication)
+        - index.tsx (Role-Adaptive Dashboard)
+        - login.tsx & register-tenant.tsx (Auth & Tenant Wizard)
+        - team-management.tsx (RBAC & User Management)
         - form-wizard.tsx (Daily Log Form)
         - sync-status.tsx (Media Queue)"]
         
@@ -27,19 +28,21 @@ flowchart TD
         - AsyncStorage (@farm_manager_sync_queue)"]
     end
 
-    subgraph SyncEngine["Sync Manager (lib/sync.ts)"]
-        QueueProcessor["processSyncQueue()
-        - Reads local file URIs
-        - Converts to blobs & uploads
-        - Updates Firestore log docs"]
+    subgraph SyncEngine["Sync & Tenant Engine (lib/sync.ts & lib/tenant.ts)"]
+        QueueProcessor["processSyncQueue() & checkLicenseQuota()
+        - Tenant-scoped storage pathing
+        - Resumable upload bytes
+        - License & quota verification"]
     end
 
     subgraph FirebaseCloud["Firebase Cloud Infrastructure"]
         Auth["Firebase Authentication"]
         Firestore["Cloud Firestore
-        Collection: agbelouve-farm-daily-logs"]
+        - tenants (Tenant Profiles & Licenses)
+        - users (Auth UID -> tenantId + Role)
+        - agbelouve-farm-daily-logs (Daily Logs)"]
         Storage["Firebase Cloud Storage
-        Bucket path: logs/{logId}/{fileName}"]
+        Bucket path: tenants/{tenantId}/logs/{logId}/{fileName}"]
     end
 
     UI --> Sensors
@@ -55,17 +58,19 @@ flowchart TD
 
 ## ✨ Features
 
-- **Shift Log Wizards**: Separate guided forms for **MORNING** and **EVENING** farm operations.
-- **GPS Location Tagging**: Automatic GPS coordinate capturing with accuracy metrics for geofence validation.
-- **Worker Attendance & Livestock Tracking**: Real-time status entry for farm workers, goat herds, poultry, and cattle counts.
-- **Rich Media Attachments**:
-  - **Photos**: Minimum requirement of 2 photos per daily log.
-  - **Video**: Up to 60-second video recording of farm activities.
-  - **Voice Notes**: Integrated audio recorder for quick verbal reports.
-- **Resumable Upload Engine & Live Feedback**: Real-time progress bar modal (`form-wizard.tsx`) during online uploads powered by Firebase `uploadBytesResumable`.
-- **Offline Queue Inspector**: Visual queue dashboard (`sync-status.tsx`) with status badges (`PENDING`, `UPLOADING`, `FAILED`, `COMPLETED`), retry controls, and clear completed action.
-- **Bilingual Interface**: Dual English / French labeling across all form fields and action buttons.
-
+- **Multi-Tenant Architecture**: Full tenant data isolation using `tenantId` scoped collections and Storage buckets.
+- **Role-Based Access Control (RBAC)**: Support for four user roles:
+  - **Owner**: Full tenant administration, team creation, and quota monitoring.
+  - **Admin**: User provisioning and farm operational oversight.
+  - **Supervisor**: Log creation, team shift reviews, and sync monitoring.
+  - **Worker**: Shift log entry and media recording.
+- **In-App Team Management**: Owners and Admins can create and add team members during registration or post-creation via `team-management.tsx`.
+- **Licensing & Quotas Hooks**: Built-in quota check hooks (`checkLicenseQuota`) for tracking active user counts and Cloud Storage bytes.
+- **Shift Log Wizards**: Guided forms for **MORNING** and **EVENING** farm operations.
+- **GPS Location Tagging**: Automatic GPS coordinate capturing for geofence validation.
+- **Rich Media Attachments**: Photos, videos, and voice note recordings with resumable upload progress.
+- **Offline Sync Queue**: Visual queue dashboard (`sync-status.tsx`) for tracking offline uploads and triggering manual syncs.
+- **Bilingual Interface**: Dual English / French labeling.
 
 ---
 
@@ -73,14 +78,36 @@ flowchart TD
 
 - [`app/`](file:///home/kwami/code-projects/farm-manager/worker-app/app): Expo Router screens and file-based routing stack.
   - [`_layout.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/_layout.tsx): Stack navigator & header theme customization.
-  - [`index.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/index.tsx): Main landing page and shift selector.
-  - [`login.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/login.tsx): Authentication page.
+  - [`index.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/index.tsx): Main landing page with user role badge.
+  - [`login.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/login.tsx): Authentication page with link to Tenant Registration.
+  - [`register-tenant.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/register-tenant.tsx): Tenant onboarding wizard for farm owners.
+  - [`team-management.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/team-management.tsx): User management dashboard & quota inspector.
   - [`form-wizard.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/form-wizard.tsx): Guided log collection wizard.
   - [`sync-status.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/sync-status.tsx): Queue inspector and upload trigger.
 - [`lib/`](file:///home/kwami/code-projects/farm-manager/worker-app/lib): Shared helpers and API interfaces.
   - [`firebase.ts`](file:///home/kwami/code-projects/farm-manager/worker-app/lib/firebase.ts): Firebase configuration & offline persistence setup.
+  - [`tenant.ts`](file:///home/kwami/code-projects/farm-manager/worker-app/lib/tenant.ts): Multi-tenant models, user roles, user provisioning, and quota hooks.
   - [`sync.ts`](file:///home/kwami/code-projects/farm-manager/worker-app/lib/sync.ts): Queue state management & background media upload processor.
+- [`firestore.rules`](file:///home/kwami/code-projects/farm-manager/worker-app/firestore.rules): Production Firestore security rules enforcing multi-tenant isolation & RBAC.
+- [`storage.rules`](file:///home/kwami/code-projects/farm-manager/worker-app/storage.rules): Production Cloud Storage rules scoping bucket access by `tenantId`.
+- [`firebase.json`](file:///home/kwami/code-projects/farm-manager/worker-app/firebase.json): Firebase CLI project manifest.
 - [`add-test-data.mjs`](file:///home/kwami/code-projects/farm-manager/worker-app/add-test-data.mjs): Utility script to insert mock log data into Firestore.
+
+---
+
+## 🔒 Deploying Firebase Security Rules
+
+To deploy the multi-tenant security rules to your live Firebase project using Firebase CLI:
+
+```bash
+# Login to Firebase CLI
+npx firebase login
+
+# Deploy Firestore & Cloud Storage security rules
+npx firebase deploy --only firestore:rules,storage
+```
+
+
 
 ---
 

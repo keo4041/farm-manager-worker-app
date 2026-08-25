@@ -106,12 +106,21 @@ export default function FormWizard() {
     }
     setSubmitting(true);
     try {
+      const currentUser = auth.currentUser;
+      let tenantId = 'default_tenant';
+      if (currentUser) {
+        const { getUserProfile } = await import('../lib/tenant');
+        const prof = await getUserProfile(currentUser.uid);
+        if (prof?.tenantId) tenantId = prof.tenantId;
+      }
+
       const logRef = doc(collection(db, 'agbelouve-farm-daily-logs'));
       const logId = logRef.id;
 
       const payload = {
         logId,
-        managerId: auth.currentUser?.uid || 'manager_uid_123',
+        tenantId,
+        managerId: currentUser?.uid || 'manager_uid_123',
         logType: type || 'MORNING',
         clientTimestamp: new Date().toISOString(),
         serverTimestamp: serverTimestamp(),
@@ -143,15 +152,16 @@ export default function FormWizard() {
       // 1. Save JSON to firestore (works offline with persistent cache)
       await setDoc(logRef, payload);
 
-      // 2. Queue Media files into AsyncStorage
+      // 2. Queue Media files into AsyncStorage with tenantId
       const queueItems: any[] = [];
-      photos.forEach((uri, i) => queueItems.push({ id: Date.now()+i+'', logId, localUri: uri, type: 'photo' as const, fileName: `photo_${i}.jpg` }));
-      if (video) queueItems.push({ id: Date.now()+'v', logId, localUri: video, type: 'video' as const, fileName: `video.mp4` });
-      if (voice) queueItems.push({ id: Date.now()+'a', logId, localUri: voice, type: 'voice' as const, fileName: `voice.m4a` });
+      photos.forEach((uri, i) => queueItems.push({ id: Date.now()+i+'', logId, tenantId, localUri: uri, type: 'photo' as const, fileName: `photo_${i}.jpg` }));
+      if (video) queueItems.push({ id: Date.now()+'v', logId, tenantId, localUri: video, type: 'video' as const, fileName: `video.mp4` });
+      if (voice) queueItems.push({ id: Date.now()+'a', logId, tenantId, localUri: voice, type: 'voice' as const, fileName: `voice.m4a` });
 
       for (const item of queueItems) {
         await addToQueue(item);
       }
+
 
       // 3. Attempt immediate sync with progress feedback if online
       setSyncingMedia(true);

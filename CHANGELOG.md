@@ -11,6 +11,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > Every change to this codebase MUST be accompanied by an entry in `CHANGELOG.md`, as well as updates to `AGENTS.md` and `README.md`, detailing **What** changed, **Why** it was changed, and **How** it was implemented.
 
+## [1.3.0] - 2026-08-25
+
+### Added
+- **Firebase Firestore Security Rules ([`firestore.rules`](file:///home/kwami/code-projects/farm-manager/worker-app/firestore.rules))**:
+  - **WHAT**: Created production-grade security rules for Firestore database collections (`tenants`, `users`, `agbelouve-farm-daily-logs`).
+  - **WHY**: To enforce tenant isolation and role-based access control (RBAC), ensuring users can only read/write documents belonging to their active `tenantId`, and restricting user management to Owners/Admins.
+  - **HOW**: Implemented Firestore rules helpers (`getUserData()`, `isTenantMember()`, `isOwnerOrAdmin()`).
+- **Firebase Cloud Storage Security Rules ([`storage.rules`](file:///home/kwami/code-projects/farm-manager/worker-app/storage.rules))**:
+  - **WHAT**: Created Cloud Storage security rules for path `tenants/{tenantId}/logs/{logId}/{fileName}` and legacy fallback `logs/{logId}/{fileName}`.
+  - **WHY**: To secure photo, video, and voice note media attachments by tenant boundary.
+  - **HOW**: Cross-checked storage path `{tenantId}` against authenticated user's Firestore profile `tenantId`.
+- **Firebase CLI Project Manifest ([`firebase.json`](file:///home/kwami/code-projects/farm-manager/worker-app/firebase.json))**:
+  - **WHAT**: Added `firebase.json` mapping Firestore and Storage security rules files for deployment via `firebase deploy --only firestore:rules,storage`.
+
+---
+
+## [1.2.0] - 2026-08-25
+
+### Added & Enhanced
+- **Multi-Tenant Data Architecture & Licensing Hooks (`lib/tenant.ts`, `lib/sync.ts`)**:
+  - **WHAT**: Implemented multi-tenant data model with `tenants` and `users` collections in Firestore, tenant-isolated GCS storage paths (`tenants/{tenantId}/logs/{logId}/{fileName}`), user role types (`owner`, `admin`, `supervisor`, `worker`), and modular licensing quota check hooks (`checkLicenseQuota`).
+  - **WHY**: To transform the app into a multi-tenant platform where separate farm organizations can securely isolate their logs, users, and media assets, while preparing for future tier-based user and storage volume limits.
+  - **HOW**: Created `lib/tenant.ts` with `createTenantAccount`, `addUserToTenant`, `getUserProfile`, `getTenantDetails`, and `checkLicenseQuota` functions. Updated `lib/sync.ts` and `app/form-wizard.tsx` to pass `tenantId`.
+- **Tenant Registration Wizard (`app/register-tenant.tsx`)**:
+  - **WHAT**: Built an onboarding wizard for farm owners to create a tenant organization and optionally pre-add initial team members (Admins, Supervisors, Workers) during registration.
+  - **WHY**: To allow farm owners to seamlessly register their farm and set up their operational staff in one guided process.
+  - **HOW**: Created `app/register-tenant.tsx` form connected to `createTenantAccount()` and added link from `app/login.tsx`.
+- **In-App Team Management & Quotas Screen (`app/team-management.tsx`)**:
+  - **WHAT**: Built a team management dashboard for Owners and Admins to inspect tenant team members, add new users post-registration, assign roles, and review storage/user quota usage metrics.
+  - **WHY**: To enable ongoing team user provisioning and role assignment directly inside the mobile app.
+  - **HOW**: Created `app/team-management.tsx` with user list, role badges, and an add-user modal.
+- **Role-Adaptive Dashboard & Navigation (`app/index.tsx`, `app/form-wizard.tsx`, `app/_layout.tsx`)**:
+  - **WHAT**: Updated home dashboard header to show active Tenant Name and User Role Badge (`[OWNER]`, `[ADMIN]`, `[SUPERVISOR]`, `[WORKER]`), rendering team management buttons conditionally for management roles.
+  - **WHY**: To tailor the user experience to the permissions and responsibilities of each user role.
+  - **HOW**: Refactored `app/index.tsx` to fetch user profile, updated `app/form-wizard.tsx` to include `tenantId`, and registered new routes in `app/_layout.tsx`.
+
+---
+
 ## [1.1.0] - 2026-08-25
 
 ### Added & Enhanced

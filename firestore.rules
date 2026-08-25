@@ -1,0 +1,67 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function: Fetch authenticated user's profile document
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    // Helper function: Check if request is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function: Check if user belongs to the specified tenant
+    function isTenantMember(tenantId) {
+      return isAuthenticated() && getUserData().tenantId == tenantId;
+    }
+
+    // Helper function: Check if user is an Owner or Admin for the tenant
+    function isOwnerOrAdmin(tenantId) {
+      return isTenantMember(tenantId) && (getUserData().role == 'owner' || getUserData().role == 'admin');
+    }
+
+    // =========================================================================
+    // 1. Tenants Collection
+    // =========================================================================
+    match /tenants/{tenantId} {
+      allow read: if isTenantMember(tenantId);
+      allow create: if isAuthenticated();
+      allow update, delete: if isOwnerOrAdmin(tenantId);
+    }
+
+    // =========================================================================
+    // 2. Users Collection
+    // =========================================================================
+    match /users/{userId} {
+      // User can read their own profile, or members of the same tenant can read team profiles
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        getUserData().tenantId == resource.data.tenantId
+      );
+      // Authenticated users (or admins) can create user profile documents
+      allow create: if isAuthenticated();
+      // User can update own profile, or Owner/Admin can update tenant user profiles
+      allow update: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        isOwnerOrAdmin(resource.data.tenantId)
+      );
+      // Owner/Admin can delete tenant users
+      allow delete: if isOwnerOrAdmin(resource.data.tenantId);
+    }
+
+    // =========================================================================
+    // 3. Agbelouve Farm Daily Logs Collection
+    // =========================================================================
+    match /agbelouve-farm-daily-logs/{logId} {
+      allow read: if isAuthenticated() && (
+        resource == null || 
+        isTenantMember(resource.data.tenantId)
+      );
+      allow create: if isAuthenticated() && isTenantMember(request.resource.data.tenantId);
+      allow update: if isAuthenticated() && isTenantMember(resource.data.tenantId);
+      allow delete: if isOwnerOrAdmin(resource.data.tenantId);
+    }
+  }
+}

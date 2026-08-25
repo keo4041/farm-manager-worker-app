@@ -48,7 +48,7 @@ export default function Login() {
       />
 
       <TouchableOpacity 
-        className="bg-black w-full rounded items-center justify-center p-6 shadow-lg"
+        className="bg-black w-full rounded items-center justify-center p-6 shadow-lg mb-4"
         onPress={handleLogin}
         disabled={loading}
       >
@@ -60,6 +60,16 @@ export default function Login() {
           </Text>
         )}
       </TouchableOpacity>
+
+      <TouchableOpacity 
+        className="bg-gray-200 border-2 border-black w-full rounded items-center justify-center p-4 mt-2"
+        onPress={() => router.push('/register-tenant')}
+      >
+        <Text className="text-black font-extrabold text-lg text-center">
+          Register New Farm Tenant / Créer une Ferme
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 }
+

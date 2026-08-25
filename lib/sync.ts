@@ -7,6 +7,7 @@ import { storage, db } from './firebase';
 export interface PendingMedia {
   id: string;
   logId: string;
+  tenantId?: string;
   localUri: string;
   type: 'photo' | 'video' | 'voice';
   fileName: string;
@@ -16,6 +17,7 @@ export interface PendingMedia {
   errorMessage?: string;
   createdAt: string;
 }
+
 
 const SYNC_QUEUE_KEY = '@farm_manager_sync_queue';
 
@@ -94,7 +96,7 @@ const getBlobFromUri = async (uri: string): Promise<Blob> => {
   } catch (err) {
     // Native FileSystem Base64 Fallback
     const base64Data = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
+      encoding: (FileSystem as any).EncodingType?.Base64 || 'base64',
     });
     const byteCharacters = atob(base64Data);
     const byteNumbers = new Array(byteCharacters.length);
@@ -146,9 +148,11 @@ export const processSyncQueue = async (onProgress?: ProgressCallback) => {
       });
       if (onProgress) onProgress(item.id, 5, 'uploading');
 
-      // 3. Obtain Blob and create Storage reference
+      // 3. Obtain Blob and create Storage reference (tenant-isolated path)
       const blob = await getBlobFromUri(item.localUri);
-      const storageRef = ref(storage, `logs/${item.logId}/${item.fileName}`);
+      const tenantPath = item.tenantId ? `tenants/${item.tenantId}/` : '';
+      const storageRef = ref(storage, `${tenantPath}logs/${item.logId}/${item.fileName}`);
+
 
       // 4. Upload with uploadBytesResumable for real-time progress callbacks
       const uploadTask = uploadBytesResumable(storageRef, blob);

@@ -1,0 +1,42 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper function: Fetch requesting user's profile from Firestore
+    function getUserData() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Helper function: Check if request is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function: Check if user belongs to the tenant matching the storage path
+    function isTenantMember(tenantId) {
+      return isAuthenticated() && getUserData().tenantId == tenantId;
+    }
+
+    // Helper function: Check if user is an Owner or Admin for the tenant
+    function isOwnerOrAdmin(tenantId) {
+      return isTenantMember(tenantId) && (getUserData().role == 'owner' || getUserData().role == 'admin');
+    }
+
+    // =========================================================================
+    // Tenant Isolated Log Media Storage: tenants/{tenantId}/logs/{logId}/{fileName}
+    // =========================================================================
+    match /tenants/{tenantId}/logs/{logId}/{fileName} {
+      allow read: if isTenantMember(tenantId);
+      allow create, update: if isTenantMember(tenantId);
+      allow delete: if isOwnerOrAdmin(tenantId);
+    }
+
+    // =========================================================================
+    // Legacy Log Media Storage: logs/{logId}/{fileName}
+    // =========================================================================
+    match /logs/{logId}/{fileName} {
+      allow read, create, update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+  }
+}
