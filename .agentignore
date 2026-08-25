@@ -1,0 +1,38 @@
+# Dependencies & Package Lockfiles
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Expo & Build Outputs
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+/ios
+/android
+
+# Asset Binaries
+assets/
+
+# Git & System
+.git/
+.DS_Store
+*.pem
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro & Debug Logs
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Environment Files
+.env*.local
+
+# TypeScript Build Info
+*.tsbuildinfo

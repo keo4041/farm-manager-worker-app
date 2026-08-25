@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio } from 'expo-av';
 import { collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
-import { addToQueue } from '../lib/sync';
+import { addToQueue, processSyncQueue } from '../lib/sync';
 
 export default function FormWizard() {
   const router = useRouter();
@@ -31,6 +31,9 @@ export default function FormWizard() {
 
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [syncingMedia, setSyncingMedia] = useState(false);
+  const [uploadProgressMsg, setUploadProgressMsg] = useState('');
+  const [overallPct, setOverallPct] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -98,7 +101,7 @@ export default function FormWizard() {
 
   const submitForm = async () => {
     if (photos.length < 2) {
-      Alert.alert('Error', 'Please take at least 2 photos.');
+      Alert.alert('Error / Erreur', 'Please take at least 2 photos.');
       return;
     }
     setSubmitting(true);
@@ -137,25 +140,51 @@ export default function FormWizard() {
         managerNotes: notes
       };
 
-      // 1. Save JSON to firestore (works offline)
+      // 1. Save JSON to firestore (works offline with persistent cache)
       await setDoc(logRef, payload);
 
-      // 2. Queue Media
-      const queueItems = [];
-      photos.forEach((uri, i) => queueItems.push({ id: Date.now()+i+'', logId, localUri: uri, type: 'photo' as 'photo', fileName: `photo_${i}.jpg` }));
-      if (video) queueItems.push({ id: Date.now()+'v', logId, localUri: video, type: 'video' as 'video', fileName: `video.mp4` });
-      if (voice) queueItems.push({ id: Date.now()+'a', logId, localUri: voice, type: 'voice' as 'voice', fileName: `voice.m4a` });
+      // 2. Queue Media files into AsyncStorage
+      const queueItems: any[] = [];
+      photos.forEach((uri, i) => queueItems.push({ id: Date.now()+i+'', logId, localUri: uri, type: 'photo' as const, fileName: `photo_${i}.jpg` }));
+      if (video) queueItems.push({ id: Date.now()+'v', logId, localUri: video, type: 'video' as const, fileName: `video.mp4` });
+      if (voice) queueItems.push({ id: Date.now()+'a', logId, localUri: voice, type: 'voice' as const, fileName: `voice.m4a` });
 
       for (const item of queueItems) {
         await addToQueue(item);
       }
 
-      Alert.alert('Success', 'Log Saved! Media added to Sync Queue.');
+      // 3. Attempt immediate sync with progress feedback if online
+      setSyncingMedia(true);
+      setUploadProgressMsg('Uploading media files / Envoi des fichiers media...');
+      const totalCount = queueItems.length;
+      let completedCount = 0;
+
+      const syncResult = await processSyncQueue((_itemId, progress, status) => {
+        if (status === 'uploading') {
+          setUploadProgressMsg(`Uploading media (${completedCount + 1}/${totalCount}) - ${progress}%`);
+          setOverallPct(Math.round(((completedCount + progress / 100) / totalCount) * 100));
+        } else if (status === 'completed') {
+          completedCount++;
+          setOverallPct(Math.round((completedCount / totalCount) * 100));
+        }
+      });
+
+      setSyncingMedia(false);
+
+      if (syncResult.count === totalCount) {
+        Alert.alert('Success / Succès', 'Daily log & all media uploaded successfully!');
+      } else {
+        Alert.alert(
+          'Log Saved Offline / Enregistré Hors Ligne',
+          `${totalCount - syncResult.count} media file(s) saved in offline queue. Upload will complete automatically when connection is restored.`
+        );
+      }
       router.replace('/');
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
       setSubmitting(false);
+      setSyncingMedia(false);
     }
   };
 
@@ -258,6 +287,21 @@ export default function FormWizard() {
         <Text className="text-safety-yellow font-extrabold text-3xl">SUBMIT LOG</Text>
       </TouchableOpacity>
 
+      <Modal visible={syncingMedia} transparent animationType="fade">
+        <View className="flex-1 bg-black/80 justify-center items-center p-6">
+          <View className="bg-white rounded-2xl p-6 w-full items-center border-4 border-safety-yellow shadow-2xl">
+            <ActivityIndicator size="large" color="#FFCC00" />
+            <Text className="text-2xl font-extrabold mt-4 text-center text-black">UPLOADING MEDIA</Text>
+            <Text className="text-lg font-bold text-gray-700 text-center mt-2">{uploadProgressMsg}</Text>
+            <View className="w-full bg-gray-200 h-6 rounded-full mt-6 overflow-hidden border-2 border-black">
+              <View className="bg-safety-yellow h-full" style={{ width: `${overallPct}%` }} />
+            </View>
+            <Text className="text-xl font-extrabold mt-2 text-black">{overallPct}%</Text>
+          </View>
+        </View>
+      </Modal>
+
     </ScrollView>
   );
 }
+
