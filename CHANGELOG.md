@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > Every change to this codebase MUST be accompanied by an entry in `CHANGELOG.md`, as well as updates to `AGENTS.md` and `README.md`, detailing **What** changed, **Why** it was changed, and **How** it was implemented.
 
+## [1.6.0] - 2026-08-25
+
+### Added & Enhanced
+- **Admin Daily & Weekly Reports Hub (`app/admin-reports.tsx`, `app/index.tsx`, `app/_layout.tsx`)**:
+  - **WHAT**: Added an administrative Reports and Logs Hub allowing Owners, Admins, and Supervisors to review daily shift logs, inspect weekly rollups with aggregate KPIs, customize dashboard card views, and configure dynamic form templates.
+  - **WHY**: To provide farm leadership with complete visibility into operational progress, livestock counts, attendance rates, field expenses, and media verification across morning and evening shifts.
+  - **HOW**:
+    1. Built `app/admin-reports.tsx` featuring a tabbed interface with:
+       - **Daily Logs Tab**: Search filter, shift filter (`ALL`, `MORNING`, `EVENING`), date filter pills, customizable view modal (toggling visibility of attendance, livestock, operations, financials, media, GPS, notes), collapsible log cards, full-screen photo zoom modal, and admin delete functionality.
+       - **Weekly Summary Tab**: ISO week navigation (Previous/Next week), aggregate KPI metrics (total shifts, attendance rate %, livestock population totals, total XOF expenses), and 7-day chronological shift timeline.
+       - **Form Template Settings Tab**: Interactive section switches, dynamic livestock animal category editor (add/remove custom categories like Sheep, Pigs, Fish), media requirement rules, and quick-tap task checklist managers.
+    2. Registered `admin-reports` in `app/_layout.tsx` and added an entry point button on the main dashboard (`app/index.tsx`) for `owner`, `admin`, and `supervisor` roles.
+
+- **Dynamic Form Wizard & Multi-Tenant Template Customization (`app/form-wizard.tsx`, `lib/tenant.ts`)**:
+  - **WHAT**: Enabled farm administrators to configure the daily log entry form template for their tenant, automatically adapting worker input fields.
+  - **WHY**: Farms have diverse operational needs, varying livestock types, custom daily task routines, and differing media verification requirements.
+  - **HOW**:
+    1. Added `TenantFormConfig` schemas, `DEFAULT_FORM_CONFIG`, and `getTenantFormConfig` / `updateTenantFormConfig` in `lib/tenant.ts`.
+    2. Updated `app/form-wizard.tsx` to dynamically fetch tenant form configuration on mount, dynamically render configured livestock categories, conditionally display sections, enforce custom photo counts, and render 1-tap checklist chips for morning and evening shifts.
+
 ## [1.5.3] - 2026-08-25
 
 ### Fixed & Enhanced

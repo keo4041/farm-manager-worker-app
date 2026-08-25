@@ -79,8 +79,12 @@ flowchart TD
   - **Supervisor**: Log creation, team shift reviews, and sync monitoring.
   - **Worker**: Shift log entry and media recording.
 - **In-App Team Management**: Owners and Admins can create and add team members (Email or Username-based) during registration or post-creation via `team-management.tsx`.
+- **Reports & Logs Hub (`admin-reports.tsx`)**: Dedicated hub for Owners, Admins, and Supervisors featuring:
+  - **Daily Logs Feed**: Live search, shift filters (`ALL`, `MORNING`, `EVENING`), date filters, and customizable view modal to toggle visible card sections.
+  - **Weekly Summary & Analytics**: ISO week selector, aggregate shift totals, attendance rate %, livestock tallies, total XOF expenses, and 7-day chronological breakdown.
+  - **Customizable Form Templates**: Admins can toggle sections, manage dynamic livestock animal categories, set media validation rules, and configure quick-tap task checklists.
+- **Dynamic Shift Log Wizards**: Guided forms for **MORNING** and **EVENING** farm operations with reactive template fields and quick-tap checklist chips.
 - **Licensing & Quotas Hooks**: Built-in quota check hooks (`checkLicenseQuota`) for tracking active user counts and Cloud Storage bytes.
-- **Shift Log Wizards**: Guided forms for **MORNING** and **EVENING** farm operations.
 - **GPS Location Tagging**: Automatic GPS coordinate capturing for geofence validation.
 - **Rich Media Attachments & Real-Time Sync**: Photos, videos, and voice note recordings streamed natively with real-time upload progress.
 - **Offline Sync Queue**: Visual queue dashboard (`sync-status.tsx`) for tracking offline uploads and triggering manual syncs.
@@ -92,11 +96,12 @@ flowchart TD
 
 - [`app/`](file:///home/kwami/code-projects/farm-manager/worker-app/app): Expo Router screens and file-based routing stack.
   - [`_layout.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/_layout.tsx): Stack navigator & header theme customization.
-  - [`index.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/index.tsx): Main landing page with user role badge.
+  - [`index.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/index.tsx): Main landing page with user role badge and Reports & Logs hub entry.
   - [`login.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/login.tsx): Smart login supporting email and username + Farm Code.
   - [`register-tenant.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/register-tenant.tsx): Tenant onboarding wizard for farm owners with auto-generated Farm Code.
   - [`team-management.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/team-management.tsx): User management dashboard supporting both email and username accounts.
-  - [`form-wizard.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/form-wizard.tsx): Guided log collection wizard.
+  - [`admin-reports.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/admin-reports.tsx): Administrative Reports & Logs Hub (Daily filterable feed, Weekly summary & Form template settings).
+  - [`form-wizard.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/form-wizard.tsx): Guided log collection wizard supporting dynamic livestock and checklist chips.
   - [`sync-status.tsx`](file:///home/kwami/code-projects/farm-manager/worker-app/app/sync-status.tsx): Queue inspector and upload trigger.
 - [`lib/`](file:///home/kwami/code-projects/farm-manager/worker-app/lib): Shared helpers and API interfaces.
   - [`firebase.ts`](file:///home/kwami/code-projects/farm-manager/worker-app/lib/firebase.ts): Firebase configuration & offline persistence setup.

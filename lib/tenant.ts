@@ -41,6 +41,67 @@ export interface UserProfile {
   createdAt: string;
 }
 
+export interface LivestockCategory {
+  id: string; // e.g. 'goats', 'poultry', 'cattle', 'sheep', 'pigs'
+  label: string; // e.g. 'Goats / Chèvres'
+  icon?: string;
+}
+
+export interface FormSectionsConfig {
+  attendance: boolean;
+  livestock: boolean;
+  operations: boolean;
+  financials: boolean;
+  photos: boolean;
+  video: boolean;
+  voice: boolean;
+  gps: boolean;
+}
+
+export interface TenantFormConfig {
+  enabledSections: FormSectionsConfig;
+  livestockCategories: LivestockCategory[];
+  minPhotos: number;
+  requireVideo: boolean;
+  requireVoice: boolean;
+  customChecklistMorning: string[];
+  customChecklistEvening: string[];
+  updatedAt?: string;
+}
+
+export const DEFAULT_FORM_CONFIG: TenantFormConfig = {
+  enabledSections: {
+    attendance: true,
+    livestock: true,
+    operations: true,
+    financials: true,
+    photos: true,
+    video: true,
+    voice: true,
+    gps: true,
+  },
+  livestockCategories: [
+    { id: 'goats', label: 'Goats / Chèvres', icon: '🐐' },
+    { id: 'poultry', label: 'Poultry / Volailles', icon: '🐔' },
+    { id: 'cattle', label: 'Cattle / Bovins', icon: '🐄' },
+  ],
+  minPhotos: 2,
+  requireVideo: false,
+  requireVoice: false,
+  customChecklistMorning: [
+    'Feed livestock & check water troughs',
+    'Inspect teak rows 1-5 for weed growth',
+    'Chop 3 drums of silage',
+    'Check tractor fuel & oil levels',
+  ],
+  customChecklistEvening: [
+    'Count & secure all goats in pens',
+    'Lock poultry coops & collect remaining eggs',
+    'Store all field tools in warehouse',
+    'Log daily fuel consumption',
+  ],
+};
+
 export interface LicenseQuota {
   planType: 'unlimited_preview' | 'tier1_standard' | 'enterprise';
   maxUsers: number | null; // null = unlimited
@@ -58,6 +119,7 @@ export interface Tenant {
   ownerEmail: string;
   createdAt: string;
   license: LicenseQuota;
+  formConfig?: TenantFormConfig;
 }
 
 export interface NewTeamMemberInput {
@@ -366,4 +428,48 @@ export const checkLicenseQuota = async (
   }
 
   return { allowed: true, tenant };
+};
+
+/**
+ * Fetches tenant form template configuration with default fallbacks
+ */
+export const getTenantFormConfig = async (tenantId: string): Promise<TenantFormConfig> => {
+  try {
+    const tenant = await getTenantDetails(tenantId);
+    if (tenant?.formConfig) {
+      return {
+        ...DEFAULT_FORM_CONFIG,
+        ...tenant.formConfig,
+        enabledSections: {
+          ...DEFAULT_FORM_CONFIG.enabledSections,
+          ...(tenant.formConfig.enabledSections || {}),
+        },
+      };
+    }
+    return DEFAULT_FORM_CONFIG;
+  } catch (err) {
+    console.error('Error fetching tenant form config:', err);
+    return DEFAULT_FORM_CONFIG;
+  }
+};
+
+/**
+ * Updates tenant form template configuration
+ */
+export const updateTenantFormConfig = async (
+  tenantId: string,
+  config: Partial<TenantFormConfig>
+): Promise<void> => {
+  const tenantRef = doc(db, 'tenants', tenantId);
+  const current = await getTenantFormConfig(tenantId);
+  const merged: TenantFormConfig = {
+    ...current,
+    ...config,
+    enabledSections: {
+      ...current.enabledSections,
+      ...(config.enabledSections || {}),
+    },
+    updatedAt: new Date().toISOString(),
+  };
+  await updateDoc(tenantRef, { formConfig: merged });
 };

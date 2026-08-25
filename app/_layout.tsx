@@ -69,6 +69,7 @@ export default function RootLayout() {
         <Stack.Screen name="login" options={{ title: 'Login / Connexion', headerShown: false }} />
         <Stack.Screen name="register-tenant" options={{ title: 'Register Farm / Nouvelle Ferme' }} />
         <Stack.Screen name="team-management" options={{ title: 'Team Management / Équipe' }} />
+        <Stack.Screen name="admin-reports" options={{ title: 'Reports & Logs / Rapports & Journaux' }} />
         <Stack.Screen name="form-wizard" options={{ title: 'Daily Log / Rapport' }} />
         <Stack.Screen name="sync-status" options={{ title: 'Sync Status / Statut' }} />
       </Stack>

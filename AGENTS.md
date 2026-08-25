@@ -27,17 +27,18 @@ To avoid executing redundant directory listings or broad text searches, refer to
 worker-app/
 ├── app/                        # Expo Router Pages & Navigation Stack
 │   ├── _layout.tsx             # Root layout with header configuration & global CSS
-│   ├── index.tsx               # Main Dashboard (Morning/Evening log entry, Role badge, Team button)
+│   ├── index.tsx               # Main Dashboard (Morning/Evening log entry, Role badge, Reports & Team buttons)
 │   ├── login.tsx               # Worker & Owner Login (Auto-detecting email vs worker username + Farm Code)
 │   ├── register-tenant.tsx     # Tenant Onboarding Wizard for Farm Owners (Auto-generates unique Farm Code)
 │   ├── team-management.tsx     # Owner & Admin User Management (Supports Email and Username worker accounts)
-│   ├── form-wizard.tsx         # Multi-step daily log form (GPS, attendance, livestock, media capture)
+│   ├── admin-reports.tsx       # Reports & Logs Hub (Daily filterable feed, Weekly summary & Form template settings)
+│   ├── form-wizard.tsx         # Multi-step daily log form (GPS, dynamic livestock, customizable sections, media)
 │   ├── sync-status.tsx         # Pending media upload queue & manual sync trigger
 │   └── global.css              # NativeWind / Tailwind CSS entry point
 ├── lib/                        # Shared Utilities & Business Logic
 │   ├── firebase.ts             # Firebase app, Auth persistence, Firestore local cache, Storage init
-│   ├── tenant.ts               # Multi-tenant models, Farm Code auto-generator, Pseudo-email auth, RBAC, Quotas
-│   └── sync.ts                 # Modern expo-file-system File API & Resumable Media Sync Queue
+│   ├── tenant.ts               # Multi-tenant models, Farm Code auto-generator, Form Config, RBAC, Quotas
+│   └── sync.ts                 # Native Expo FileSystem binary streaming & Resumable Media Sync Queue
 ├── assets/                     # App icons, splash screens, and image assets
 ├── add-test-data.mjs           # Node script for seeding Firestore with sample daily log documents
 ├── firebase.json               # Firebase CLI config mapping firestore & storage security rules

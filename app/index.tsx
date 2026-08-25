@@ -75,6 +75,7 @@ export default function Home() {
   };
 
   const isManagementRole = userProfile?.role === 'owner' || userProfile?.role === 'admin';
+  const canViewReports = userProfile?.role === 'owner' || userProfile?.role === 'admin' || userProfile?.role === 'supervisor';
 
   return (
     <ScrollView className="flex-1 bg-white p-4">
@@ -122,17 +123,35 @@ export default function Home() {
 
       {/* Role-Based Action Cards */}
       <View className="space-y-4 flex-col gap-4">
-        {/* Owner / Admin Management Access */}
+        {/* Reports & Logs Hub (Owner / Admin / Supervisor) */}
+        {canViewReports && (
+          <TouchableOpacity
+            className="bg-black w-full rounded-2xl items-center justify-between p-5 shadow-lg flex-row border-2 border-safety-yellow"
+            onPress={() => router.push('/admin-reports')}
+          >
+            <View className="flex-1 pr-2">
+              <Text className="text-safety-yellow font-extrabold text-2xl">REPORTS & LOGS</Text>
+              <Text className="text-gray-300 font-bold text-xs mt-0.5">
+                Daily timeline, weekly rollup & customizable view
+              </Text>
+            </View>
+            <View className="bg-safety-yellow px-3 py-2 rounded-xl border border-black">
+              <Text className="text-black font-extrabold text-xs">VIEW HUB 📊</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
+        {/* Owner / Admin Team Management Access */}
         {isManagementRole && (
           <TouchableOpacity
-            className="bg-purple-900 w-full rounded-2xl items-center justify-between p-6 shadow-lg flex-row border-2 border-black"
+            className="bg-purple-900 w-full rounded-2xl items-center justify-between p-5 shadow-lg flex-row border-2 border-black"
             onPress={() => router.push('/team-management')}
           >
-            <View>
+            <View className="flex-1 pr-2">
               <Text className="text-white font-extrabold text-2xl">TEAM MANAGEMENT</Text>
-              <Text className="text-purple-200 font-bold text-sm">Manage Admins, Supervisors & Workers</Text>
+              <Text className="text-purple-200 font-bold text-xs mt-0.5">Manage Admins, Supervisors & Workers</Text>
             </View>
-            <View className="bg-safety-yellow px-3 py-2 rounded-lg">
+            <View className="bg-safety-yellow px-3 py-2 rounded-xl">
               <Text className="text-black font-extrabold text-xs">USERS & QUOTAS</Text>
             </View>
           </TouchableOpacity>
