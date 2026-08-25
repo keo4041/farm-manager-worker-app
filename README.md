@@ -71,7 +71,7 @@ flowchart TD
 - **Collision-Free Unique Farm Codes**: Auto-generates unique 6-8 character farm codes (e.g. `AGBE4821`) during registration so workers can quickly connect without complex IDs.
 - **Worker Username Authentication**: Farm workers without email addresses can connect using their **Username + Farm Code + Password**, mapped securely to deterministic pseudo-emails behind the scenes.
 - **Smart Login Auto-Detection**: Single login input field automatically detects email vs worker username and conditionally prompts for the Farm Code.
-- **Modern File System Integration**: Fully migrated to the new `expo-file-system` `File` class for direct binary byte access without legacy deprecated methods.
+- **Modern File System & Native Blob Pipeline**: Cross-platform file handling using React Native's native `XMLHttpRequest` Blob module and `expo-file-system` `File` class, with automatic memory reclamation (`blob.close()`) to avoid ArrayBuffer conversion errors and out-of-memory overhead.
 - **Role-Based Access Control (RBAC)**: Support for four user roles:
   - **Owner**: Full tenant administration, team creation, and quota monitoring.
   - **Admin**: User provisioning and farm operational oversight.
@@ -81,7 +81,7 @@ flowchart TD
 - **Licensing & Quotas Hooks**: Built-in quota check hooks (`checkLicenseQuota`) for tracking active user counts and Cloud Storage bytes.
 - **Shift Log Wizards**: Guided forms for **MORNING** and **EVENING** farm operations.
 - **GPS Location Tagging**: Automatic GPS coordinate capturing for geofence validation.
-- **Rich Media Attachments**: Photos, videos, and voice note recordings with resumable upload progress.
+- **Rich Media Attachments**: Photos, videos, and voice note recordings with resumable upload progress and explicit MIME type tagging.
 - **Offline Sync Queue**: Visual queue dashboard (`sync-status.tsx`) for tracking offline uploads and triggering manual syncs.
 - **Bilingual Interface**: Dual English / French labeling.
 

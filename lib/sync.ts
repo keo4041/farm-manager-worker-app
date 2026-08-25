@@ -86,21 +86,87 @@ export const retryFailedItems = async () => {
 };
 
 /**
- * Safely converts local URI to a Blob using modern expo-file-system File API with fetch fallback
+ * Determines MIME content type based on media type and file extension
  */
-const getBlobFromUri = async (uri: string): Promise<Blob> => {
+const getContentType = (type: 'photo' | 'video' | 'voice', fileName: string): string => {
+  const lower = fileName.toLowerCase();
+  if (type === 'photo') {
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  } else if (type === 'video') {
+    if (lower.endsWith('.mov')) return 'video/quicktime';
+    return 'video/mp4';
+  } else if (type === 'voice') {
+    if (lower.endsWith('.m4a')) return 'audio/m4a';
+    if (lower.endsWith('.caf')) return 'audio/x-caf';
+    if (lower.endsWith('.aac')) return 'audio/aac';
+    return 'audio/mp4';
+  }
+  return 'application/octet-stream';
+};
+
+/**
+ * Safely converts local URI to a Blob or Uint8Array for Firebase Storage upload.
+ * In React Native, XMLHttpRequest with responseType = 'blob' is the standard way
+ * to obtain a native Blob without hitting the "Creating blobs from 'ArrayBuffer'
+ * and 'ArrayBufferView' are not supported" limitation.
+ */
+const getUploadDataFromUri = async (
+  uri: string
+): Promise<{ data: Blob | Uint8Array; cleanup?: () => void }> => {
+  // Strategy 1: XMLHttpRequest with responseType = 'blob' (Standard React Native native blob module)
   try {
-    const response = await fetch(uri);
-    return await response.blob();
-  } catch (err) {
-    // New expo-file-system File API - direct binary bytes
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.onload = () => {
+        if (xhr.response) {
+          resolve(xhr.response);
+        } else {
+          reject(new Error('XMLHttpRequest returned empty response'));
+        }
+      };
+      xhr.onerror = (e) => {
+        reject(new TypeError(`XHR blob conversion failed: ${e}`));
+      };
+      xhr.responseType = 'blob';
+      xhr.open('GET', uri, true);
+      xhr.send(null);
+    });
+
+    return {
+      data: blob,
+      cleanup: () => {
+        try {
+          (blob as any)?.close?.();
+        } catch {
+          // Ignore close errors
+        }
+      },
+    };
+  } catch (xhrErr) {
+    // Strategy 2: Web / standard fetch fallback
     try {
-      const file = new File(uri);
-      const bytes = await file.bytes();
-      return new Blob([bytes]);
-    } catch (fileErr) {
-      console.error('Error reading file bytes via File class:', fileErr);
-      throw fileErr;
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      return {
+        data: blob,
+        cleanup: () => {
+          try {
+            (blob as any)?.close?.();
+          } catch {}
+        },
+      };
+    } catch (fetchErr) {
+      // Strategy 3: Direct binary bytes from expo-file-system File API passed directly to uploadBytesResumable (without new Blob)
+      try {
+        const file = new File(uri);
+        const bytes = await file.bytes();
+        return { data: bytes };
+      } catch (fileErr) {
+        console.error('Error reading file for upload:', fileErr);
+        throw fileErr;
+      }
     }
   }
 };
@@ -124,6 +190,7 @@ export const processSyncQueue = async (onProgress?: ProgressCallback) => {
   let failed = 0;
 
   for (const item of pendingItems) {
+    let uploadData: { data: Blob | Uint8Array; cleanup?: () => void } | null = null;
     try {
       // 1. Verify local file existence using new File API
       const file = new File(item.localUri);
@@ -145,23 +212,28 @@ export const processSyncQueue = async (onProgress?: ProgressCallback) => {
       });
       if (onProgress) onProgress(item.id, 5, 'uploading');
 
-      // 3. Obtain Blob and create Storage reference (tenant-isolated path)
-      const blob = await getBlobFromUri(item.localUri);
+      // 3. Obtain upload payload and create Storage reference (tenant-isolated path)
+      uploadData = await getUploadDataFromUri(item.localUri);
       const tenantPath = item.tenantId ? `tenants/${item.tenantId}/` : '';
       const storageRef = ref(storage, `${tenantPath}logs/${item.logId}/${item.fileName}`);
+      const metadata = {
+        contentType: getContentType(item.type, item.fileName),
+      };
 
       // 4. Upload with uploadBytesResumable for real-time progress callbacks
-      const uploadTask = uploadBytesResumable(storageRef, blob);
+      const uploadTask = uploadBytesResumable(storageRef, uploadData.data, metadata);
 
       await new Promise<void>((resolve, reject) => {
         uploadTask.on(
           'state_changed',
           snapshot => {
-            const pct = Math.round(
-              (snapshot.bytesTransferred / snapshot.totalBytes) * 100
-            );
-            updateItemInQueue(item.id, { progress: pct });
-            if (onProgress) onProgress(item.id, pct, 'uploading');
+            if (snapshot.totalBytes > 0) {
+              const pct = Math.round(
+                (snapshot.bytesTransferred / snapshot.totalBytes) * 100
+              );
+              updateItemInQueue(item.id, { progress: pct });
+              if (onProgress) onProgress(item.id, pct, 'uploading');
+            }
           },
           error => {
             reject(error);
@@ -200,6 +272,10 @@ export const processSyncQueue = async (onProgress?: ProgressCallback) => {
       failed++;
       // Stop loop if offline/network error occurs
       break;
+    } finally {
+      if (uploadData?.cleanup) {
+        uploadData.cleanup();
+      }
     }
   }
 

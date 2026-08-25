@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > Every change to this codebase MUST be accompanied by an entry in `CHANGELOG.md`, as well as updates to `AGENTS.md` and `README.md`, detailing **What** changed, **Why** it was changed, and **How** it was implemented.
 
+## [1.4.1] - 2026-08-25
+
+### Fixed & Enhanced
+- **React Native Firebase Storage Upload Pipeline & Blob Fix (`lib/sync.ts`)**:
+  - **WHAT**: Fixed the runtime exception `"Creating blobs from 'ArrayBuffer' and 'ArrayBufferView' are not supported"` encountered during media uploads to Firebase Cloud Storage.
+  - **WHY**: In React Native, JavaScript engines (such as Hermes) and `BlobManager` do not support constructing Blobs from `ArrayBuffer` or `ArrayBufferView` (`Uint8Array`) using `new Blob([bytes])`. Passing files via `fetch(uri)` on local URIs is also unreliable on mobile devices.
+  - **HOW**: 
+    1. Replaced `getBlobFromUri` with `getUploadDataFromUri` utilizing native `XMLHttpRequest` with `responseType = 'blob'`, which interfaces directly with React Native's native `BlobModule`.
+    2. Added fallback to `fetch` (for Web) and direct `Uint8Array` binary bytes passing directly to `uploadBytesResumable` without wrapping in `new Blob`.
+    3. Added `getContentType` helper to pass explicit MIME metadata (`image/jpeg`, `video/mp4`, `audio/m4a`, etc.) with uploads.
+    4. Added automatic memory reclamation via `blob.close()` in `finally` blocks to prevent memory leaks during large media batch uploads.
+
 ## [1.4.0] - 2026-08-25
 
 ### Added & Enhanced

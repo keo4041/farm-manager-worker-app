@@ -67,9 +67,11 @@ worker-app/
     - Farm workers without standard email log in with their **Username + Farm Code + Password**.
     - Farm Code is looked up against `tenants.farmCode` to obtain `tenantId`.
     - The client deterministically computes `{username}@{tenantId}.farmapp.local` and authenticates via standard Firebase Auth.
-- **Offline Sync Queue**:
+- **Offline Sync Queue & Firebase Storage Uploads**:
   - `lib/sync.ts` stores pending media uploads in `AsyncStorage` under `@farm_manager_sync_queue`.
-  - Uses modern `expo-file-system` `File` class (`new File(uri).exists`, `file.bytes()`) replacing deprecated `getInfoAsync` and `readAsStringAsync`.
+  - Media file conversion (`getUploadDataFromUri`): Uses native `XMLHttpRequest` with `responseType = 'blob'` to stream files directly through React Native's native `BlobModule` avoiding `"Creating blobs from 'ArrayBuffer' and 'ArrayBufferView' are not supported"` errors, with web `fetch` and Expo `File.bytes()` (`Uint8Array`) fallback.
+  - Automatically manages memory by invoking native `blob.close()` after upload completion or error.
+  - Passes explicit MIME metadata (`contentType: 'image/jpeg' | 'video/mp4' | 'audio/m4a' | ...`) to `uploadBytesResumable`.
   - Media item schema (`PendingMedia`): `id`, `logId`, `tenantId`, `localUri`, `type` (`photo`|`video`|`voice`), `fileName`, `status` (`pending`|`uploading`|`completed`|`failed`), `progress` (0-100), `retryCount`, `errorMessage`, `createdAt`.
   - Uses `uploadBytesResumable` for streaming real-time percentage progress updates to UI modal/badges.
   - Storage paths: `tenants/{tenantId}/logs/{logId}/{fileName}`.
