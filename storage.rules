@@ -19,19 +19,17 @@ service firebase.storage {
 
     // Helper function: Check if user belongs to the tenant matching the storage path
     function isTenantMember(tenantId) {
-      return isAuthenticated() && (
-        !userExists() || 
-        getUserData().tenantId == tenantId ||
-        getUserData().tenantId == null
-      );
+      return isAuthenticated() && 
+        userExists() && 
+        getUserData().tenantId == tenantId;
     }
 
     // Helper function: Check if user is an Owner or Admin for the tenant
     function isOwnerOrAdmin(tenantId) {
-      return isAuthenticated() && (
-        !userExists() || 
-        getUserData().role in ['owner', 'admin']
-      );
+      return isAuthenticated() && 
+        userExists() && 
+        getUserData().tenantId == tenantId && 
+        getUserData().role in ['owner', 'admin'];
     }
 
     // =========================================================================
@@ -47,8 +45,9 @@ service firebase.storage {
     // Legacy Log Media Storage: logs/{logId}/{fileName}
     // =========================================================================
     match /logs/{logId}/{fileName} {
-      allow read, create, update: if isAuthenticated();
-      allow delete: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if false; // Disallow arbitrary legacy deletion
     }
   }
 }

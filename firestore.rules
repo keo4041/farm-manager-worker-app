@@ -23,17 +23,28 @@ service cloud.firestore {
     }
 
     // =========================================================================
-    // 1. Tenants Collection
+    // 1. Farm Codes Public Directory (Minimal metadata for login lookup only)
+    // Document ID is the uppercase Farm Code (e.g. /farm-codes/AGBE4821)
+    // Contains ONLY: { farmCode, tenantId, name }
+    // =========================================================================
+    match /farm-codes/{code} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && isOwnerOrAdmin(resource.data.tenantId);
+    }
+
+    // =========================================================================
+    // 2. Tenants Collection (Full sensitive profile, license, config)
     // =========================================================================
     match /tenants/{tenantId} {
-      // Allow read for authenticated members OR unauthenticated read for farmCode login resolution
-      allow read: if isTenantMember(tenantId) || resource.data.farmCode != null;
+      // Strictly restricted to authenticated tenant members
+      allow read: if isTenantMember(tenantId);
       allow create: if isAuthenticated();
       allow update, delete: if isOwnerOrAdmin(tenantId);
     }
 
     // =========================================================================
-    // 2. Users Collection
+    // 3. Users Collection
     // =========================================================================
     match /users/{userId} {
       // User can read their own profile, or members of the same tenant can read team profiles
@@ -41,11 +52,18 @@ service cloud.firestore {
         request.auth.uid == userId || 
         getUserData().tenantId == resource.data.tenantId
       );
-      // Authenticated users (or admins) can create user profile documents
-      allow create: if isAuthenticated();
-      // User can update own profile, or Owner/Admin can update tenant user profiles
+      // Authenticated users creating their own profile, or Admin creating team member
+      allow create: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        isOwnerOrAdmin(request.resource.data.tenantId)
+      );
+      // User can update own non-sensitive profile (e.g. displayName), but CANNOT self-escalate role or change tenantId
       allow update: if isAuthenticated() && (
-        request.auth.uid == userId || 
+        (
+          request.auth.uid == userId && 
+          request.resource.data.role == resource.data.role && 
+          request.resource.data.tenantId == resource.data.tenantId
+        ) || 
         isOwnerOrAdmin(resource.data.tenantId)
       );
       // Owner/Admin can delete tenant users
@@ -53,7 +71,7 @@ service cloud.firestore {
     }
 
     // =========================================================================
-    // 3. Agbelouve Farm Daily Logs Collection
+    // 4. Agbelouve Farm Daily Logs Collection
     // =========================================================================
     match /agbelouve-farm-daily-logs/{logId} {
       allow read: if isAuthenticated() && (

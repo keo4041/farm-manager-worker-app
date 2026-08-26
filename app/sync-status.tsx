@@ -8,8 +8,10 @@ import {
   removeFromQueue,
   PendingMedia,
 } from '../lib/sync';
+import { useTranslation } from '../lib/i18n';
 
 export default function SyncStatus() {
+  const { t } = useTranslation();
   const [queue, setQueue] = useState<PendingMedia[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [result, setResult] = useState('');
@@ -81,14 +83,14 @@ export default function SyncStatus() {
     <View className="flex-1 bg-white p-4">
       <View className="flex-row justify-between items-center mb-4">
         <Text className="text-2xl font-extrabold text-black">
-          Sync Queue ({queue.length})
+          {t('syncQueueTitle')} ({queue.length})
         </Text>
         {queue.some(i => i.status === 'completed') && (
           <TouchableOpacity
             onPress={handleClearCompleted}
             className="bg-gray-200 px-3 py-2 rounded-lg"
           >
-            <Text className="text-black font-bold text-xs">Clear Completed</Text>
+            <Text className="text-black font-bold text-xs">{t('clearCompleted')}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -103,11 +105,11 @@ export default function SyncStatus() {
         {syncing ? (
           <View className="flex-row items-center space-x-3">
             <ActivityIndicator color="#000" size="small" />
-            <Text className="text-black font-extrabold text-xl ml-2">UPLOADING MEDIA...</Text>
+            <Text className="text-black font-extrabold text-xl ml-2">{t('uploadingMediaBtn')}</Text>
           </View>
         ) : (
           <Text className="text-black font-extrabold text-2xl">
-            {failedCount > 0 ? `RETRY ${failedCount} FAILED & SYNC` : 'SYNC NOW / SYNCHRONISER'}
+            {failedCount > 0 ? t('retryAndSync', { count: failedCount }) : t('syncNow')}
           </Text>
         )}
       </TouchableOpacity>
@@ -148,15 +150,15 @@ export default function SyncStatus() {
                 onPress={() => handleRemoveItem(item.id)}
                 className="bg-red-50 px-3 py-1.5 rounded-md border border-red-300"
               >
-                <Text className="text-red-700 font-bold text-xs">Remove</Text>
+                <Text className="text-red-700 font-bold text-xs">{t('remove')}</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
         ListEmptyComponent={
           <View className="items-center justify-center p-8 bg-gray-100 rounded-2xl border-2 border-dashed border-gray-300 mt-4">
-            <Text className="text-gray-500 font-bold text-lg">No Pending Uploads 🎉</Text>
-            <Text className="text-gray-400 text-sm mt-1">All farm log media files are synced.</Text>
+            <Text className="text-gray-500 font-bold text-lg">{t('noPendingUploads')}</Text>
+            <Text className="text-gray-400 text-sm mt-1">{t('allSyncedDesc')}</Text>
           </View>
         }
       />

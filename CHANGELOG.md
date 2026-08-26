@@ -11,6 +11,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > Every change to this codebase MUST be accompanied by an entry in `CHANGELOG.md`, as well as updates to `AGENTS.md` and `README.md`, detailing **What** changed, **Why** it was changed, and **How** it was implemented.
 
+## [1.7.0] - 2026-08-26
+
+### Security & Architecture Hardening
+- **Public Farm Code Directory & Tenant Profile Lockdown (`firestore.rules`, `storage.rules`, `lib/tenant.ts`)**:
+  - **WHAT**: Secured Firestore and Storage security rules by introducing a dedicated public collection `/farm-codes/{farmCode}` containing only `{ farmCode, tenantId, name }` for unauthenticated login resolution, locking down full tenant documents (`/tenants/{tenantId}`) to authenticated tenant members, and preventing user self-escalation to `role: 'owner'`.
+  - **WHY**: Resolves Issue 3.1 where unauthenticated clients could enumerate and read all sensitive tenant metadata (owner emails, license limits, configurations). Also prevents standard workers from modifying their own user profile to gain owner/admin privileges.
+  - **HOW**:
+    1. Added `match /farm-codes/{code}` in `firestore.rules` allowing public read of minimal metadata (`farmCode`, `tenantId`, `name`).
+    2. Restricted `match /tenants/{tenantId}` in `firestore.rules` to `isTenantMember(tenantId)`.
+    3. Added strict constraint in `match /users/{userId}` update rule ensuring users cannot alter their own `role` or `tenantId`.
+    4. Hardened `storage.rules` to require verified tenant membership (`userExists() && getUserData().tenantId == tenantId`) and disabled arbitrary legacy file deletion.
+    5. Updated `createTenantAccount` and `lookupTenantByFarmCode` in `lib/tenant.ts` to write and read from `/farm-codes/{farmCode}`.
+
+### Added & Enhanced
+- **Automated Network Reconnection Listener & Background Media Auto-Sync (`lib/sync.ts`, `app/_layout.tsx`)**:
+  - **WHAT**: Added automatic background upload trigger using `@react-native-community/netinfo` when the device regains internet connectivity.
+  - **WHY**: In rural low-connectivity areas, field workers log shifts while offline; media uploads should automatically resume in the background as soon as connectivity is restored without requiring manual user intervention.
+  - **HOW**:
+    1. Installed `@react-native-community/netinfo`.
+    2. Implemented `startNetworkSyncListener` and concurrency mutex (`isSyncProcessing`) in `lib/sync.ts`.
+    3. Initialized the listener in `app/_layout.tsx` to keep the background upload queue active throughout the app lifecycle.
+
+- **Bilingual (FR / EN) Localization System (`lib/i18n.ts`, `app/_layout.tsx`, all screens)**:
+  - **WHAT**: Implemented a comprehensive French and English internationalization system with persistent storage in `AsyncStorage` (`@farm_manager_language`) and an in-header language switcher.
+  - **WHY**: Field workers in Agbelouve, Togo primarily operate in French; all UI strings, buttons, error messages, and form labels must be fully localized with instantaneous switching.
+  - **HOW**:
+    1. Created `lib/i18n.ts` featuring comprehensive dictionaries, `useTranslation()` React hook, `getLanguage()`, and `setLanguage()`.
+    2. Added a language toggle header button in `app/_layout.tsx` (🇫🇷 FR / 🇺🇸 EN).
+    3. Integrated `t(...)` across `login.tsx`, `register-tenant.tsx`, `index.tsx`, `team-management.tsx`, `form-wizard.tsx`, and `sync-status.tsx`.
+
+- **Mobile Ergonomics & Form Validation (`app/login.tsx`, `app/register-tenant.tsx`, `app/team-management.tsx`, `app/form-wizard.tsx`)**:
+  - **WHAT**: Fixed keyboard occlusion issues, enforced minimum password length checks, sanitized numeric inputs, and added an in-wizard audio playback preview player.
+  - **WHY**: Improves field usability, prevents input truncation on small devices, and allows workers to verify voice notes before submission.
+  - **HOW**:
+    1. Wrapped all forms in `<KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>` with `keyboardShouldPersistTaps="handled"`.
+    2. Enforced minimum 6-character validation across all password input fields.
+    3. Sanitized numeric inputs (`Math.max(0, parseInt(val) || 0)`) in `form-wizard.tsx`.
+    4. Integrated `Audio.Sound` preview player with Play, Pause, and Delete controls in `form-wizard.tsx`.
+
+- **Environment Variables Configuration (`.env`, `.env.example`, `lib/firebase.ts`)**:
+  - **WHAT**: Decoupled Firebase project credentials to `EXPO_PUBLIC_FIREBASE_*` environment variables with fallback defaults.
+  - **WHY**: Adheres to 12-factor configuration best practices and enables smooth transitions between development, staging, and production environments.
+
 ## [1.6.0] - 2026-08-25
 
 ### Added & Enhanced

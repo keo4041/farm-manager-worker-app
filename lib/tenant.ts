@@ -131,13 +131,27 @@ export interface NewTeamMemberInput {
   authMethod?: AuthMethod;
 }
 
+export interface FarmCodeRecord {
+  farmCode: string;
+  tenantId: string;
+  name: string;
+}
+
 /**
- * Looks up a tenant organization by its unique Farm Code
+ * Looks up a tenant organization by its unique Farm Code safely via public index
  */
-export const lookupTenantByFarmCode = async (farmCode: string): Promise<Tenant | null> => {
+export const lookupTenantByFarmCode = async (farmCode: string): Promise<Tenant | FarmCodeRecord | null> => {
   try {
     const cleanCode = farmCode.trim().toUpperCase();
     if (!cleanCode) return null;
+
+    // 1. Try fetching from sanitized public /farm-codes/{farmCode} document first
+    const codeDoc = await getDoc(doc(db, 'farm-codes', cleanCode));
+    if (codeDoc.exists()) {
+      return codeDoc.data() as FarmCodeRecord;
+    }
+
+    // 2. Fallback query on tenants collection (works if user is authenticated member)
     const q = query(collection(db, 'tenants'), where('farmCode', '==', cleanCode));
     const snap = await getDocs(q);
     if (!snap.empty) {
@@ -220,8 +234,13 @@ export const createTenantAccount = async (
     },
   };
 
-  // 4. Save Tenant Document in Firestore
+  // 4. Save Tenant Document and Public Farm Code Index in Firestore
   await setDoc(doc(db, 'tenants', tenantId), tenantDoc);
+  await setDoc(doc(db, 'farm-codes', farmCode), {
+    farmCode,
+    tenantId,
+    name: farmName,
+  });
 
   // 5. Save Owner User Profile Document
   const ownerProfile: UserProfile = {

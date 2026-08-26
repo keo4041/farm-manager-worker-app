@@ -5,9 +5,11 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { getSyncQueue, processSyncQueue } from '../lib/sync';
 import { getUserProfile, getTenantDetails, UserProfile, Tenant } from '../lib/tenant';
+import { useTranslation } from '../lib/i18n';
 
 export default function Home() {
   const router = useRouter();
+  const { t, isFrench } = useTranslation();
   const [pendingCount, setPendingCount] = useState(0);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [tenant, setTenant] = useState<Tenant | null>(null);
@@ -17,8 +19,8 @@ export default function Home() {
       const prof = await getUserProfile(uid);
       setUserProfile(prof);
       if (prof?.tenantId) {
-        const t = await getTenantDetails(prof.tenantId);
-        setTenant(t);
+        const tDetails = await getTenantDetails(prof.tenantId);
+        setTenant(tDetails);
       }
     } catch (e) {
       console.error('Error loading user data:', e);
@@ -55,18 +57,18 @@ export default function Home() {
 
   const handleSignOut = () => {
     Alert.alert(
-      'Log Out / Déconnexion',
-      'Are you sure you want to log out? / Voulez-vous vraiment vous déconnecter ?',
+      t('logOutConfirmTitle'),
+      t('logOutConfirmMsg'),
       [
-        { text: 'Cancel / Annuler', style: 'cancel' },
+        { text: t('cancel'), style: 'cancel' },
         {
-          text: 'Log Out / Déconnexion',
+          text: t('logOut'),
           style: 'destructive',
           onPress: async () => {
             try {
               await signOut(auth);
             } catch (err: any) {
-              Alert.alert('Sign Out Error', err.message);
+              Alert.alert(t('error'), err.message);
             }
           },
         },
@@ -87,7 +89,7 @@ export default function Home() {
               {tenant?.name || 'Agbelouve Farm Manager'}
             </Text>
             <Text className="text-white font-bold text-xs mt-1">
-              {userProfile?.displayName || userProfile?.email || 'Worker Portal'}
+              {userProfile?.displayName || userProfile?.email || t('workerPortal')}
             </Text>
           </View>
 
@@ -100,7 +102,7 @@ export default function Home() {
 
         {tenant?.farmCode ? (
           <View className="mt-3 pt-3 border-t border-gray-800 flex-row items-center justify-between">
-            <Text className="text-gray-400 font-bold text-xs uppercase">Farm Code / Code Ferme:</Text>
+            <Text className="text-gray-400 font-bold text-xs uppercase">{t('farmCode')}:</Text>
             <View className="bg-gray-800 px-3 py-1 rounded-md border border-safety-yellow">
               <Text className="text-safety-yellow font-extrabold text-sm tracking-wider">
                 {tenant.farmCode}
@@ -115,10 +117,12 @@ export default function Home() {
         <View className="flex-row items-center space-x-2">
           <View className={`w-4 h-4 rounded-full ${pendingCount > 0 ? 'bg-amber-500' : 'bg-green-500'}`} />
           <Text className="text-black font-extrabold text-lg ml-2">
-            {pendingCount > 0 ? `${pendingCount} Media Item(s) Pending` : 'All Media Synced'}
+            {pendingCount > 0
+              ? t('mediaPending', { count: pendingCount })
+              : t('allMediaSynced')}
           </Text>
         </View>
-        <Text className="text-xs font-bold text-gray-500">Offline Ready</Text>
+        <Text className="text-xs font-bold text-gray-500">{t('offlineReady')}</Text>
       </View>
 
       {/* Role-Based Action Cards */}
@@ -130,13 +134,13 @@ export default function Home() {
             onPress={() => router.push('/admin-reports')}
           >
             <View className="flex-1 pr-2">
-              <Text className="text-safety-yellow font-extrabold text-2xl">REPORTS & LOGS</Text>
+              <Text className="text-safety-yellow font-extrabold text-2xl">{t('reportsAndLogs')}</Text>
               <Text className="text-gray-300 font-bold text-xs mt-0.5">
-                Daily timeline, weekly rollup & customizable view
+                {t('reportsSubtitle')}
               </Text>
             </View>
             <View className="bg-safety-yellow px-3 py-2 rounded-xl border border-black">
-              <Text className="text-black font-extrabold text-xs">VIEW HUB 📊</Text>
+              <Text className="text-black font-extrabold text-xs">{t('viewHub')}</Text>
             </View>
           </TouchableOpacity>
         )}
@@ -148,11 +152,11 @@ export default function Home() {
             onPress={() => router.push('/team-management')}
           >
             <View className="flex-1 pr-2">
-              <Text className="text-white font-extrabold text-2xl">TEAM MANAGEMENT</Text>
-              <Text className="text-purple-200 font-bold text-xs mt-0.5">Manage Admins, Supervisors & Workers</Text>
+              <Text className="text-white font-extrabold text-2xl">{t('teamManagement')}</Text>
+              <Text className="text-purple-200 font-bold text-xs mt-0.5">{t('teamSubtitle')}</Text>
             </View>
             <View className="bg-safety-yellow px-3 py-2 rounded-xl">
-              <Text className="text-black font-extrabold text-xs">USERS & QUOTAS</Text>
+              <Text className="text-black font-extrabold text-xs">{t('usersAndQuotas')}</Text>
             </View>
           </TouchableOpacity>
         )}
@@ -162,8 +166,8 @@ export default function Home() {
           onPress={() => router.push({ pathname: '/form-wizard', params: { type: 'MORNING' } })}
         >
           <Text className="text-black font-extrabold text-3xl text-center px-4">
-            START MORNING LOG{"\n"}
-            <Text className="text-xl font-bold">Démarrer le rapport du matin</Text>
+            {t('startMorningLog')}{"\n"}
+            <Text className="text-xl font-bold">{t('startMorningLogSub')}</Text>
           </Text>
         </TouchableOpacity>
 
@@ -172,8 +176,8 @@ export default function Home() {
           onPress={() => router.push({ pathname: '/form-wizard', params: { type: 'EVENING' } })}
         >
           <Text className="text-safety-yellow font-extrabold text-3xl text-center px-4">
-            START EVENING LOG{"\n"}
-            <Text className="text-xl font-bold">Démarrer le rapport du soir</Text>
+            {t('startEveningLog')}{"\n"}
+            <Text className="text-xl font-bold">{t('startEveningLogSub')}</Text>
           </Text>
         </TouchableOpacity>
         
@@ -181,7 +185,7 @@ export default function Home() {
           className="bg-gray-200 w-full rounded-xl items-center justify-between h-16 px-6 border-2 border-black flex-row"
           onPress={() => router.push('/sync-status')}
         >
-          <Text className="text-black font-extrabold text-lg">View Sync Queue / File d'attente</Text>
+          <Text className="text-black font-extrabold text-lg">{t('viewSyncQueue')}</Text>
           {pendingCount > 0 && (
             <View className="bg-amber-500 px-3 py-1 rounded-full">
               <Text className="text-white font-extrabold text-sm">{pendingCount}</Text>
@@ -195,7 +199,7 @@ export default function Home() {
           onPress={handleSignOut}
         >
           <Text className="text-red-700 font-extrabold text-base">
-            Log Out / Déconnexion
+            {t('logOut')}
           </Text>
         </TouchableOpacity>
       </View>

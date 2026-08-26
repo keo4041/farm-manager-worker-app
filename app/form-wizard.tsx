@@ -1,5 +1,16 @@
-import { useState, useEffect } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
@@ -8,18 +19,20 @@ import { collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { addToQueue, processSyncQueue } from '../lib/sync';
 import { getTenantFormConfig, getUserProfile, TenantFormConfig, DEFAULT_FORM_CONFIG } from '../lib/tenant';
+import { useTranslation } from '../lib/i18n';
 
 export default function FormWizard() {
   const router = useRouter();
   const { type } = useLocalSearchParams(); // MORNING | EVENING
   const isMorning = (type || 'MORNING') === 'MORNING';
+  const { t } = useTranslation();
 
   // Dynamic Form Config
   const [formConfig, setFormConfig] = useState<TenantFormConfig>(DEFAULT_FORM_CONFIG);
   const [tenantId, setTenantId] = useState('default_tenant');
 
   // State
-  const [loadingMsg, setLoadingMsg] = useState('Loading Form / Chargement...');
+  const [loadingMsg, setLoadingMsg] = useState(t('loading'));
   const [gps, setGps] = useState<any>(null);
   const [gpsError, setGpsError] = useState('');
 
@@ -45,11 +58,24 @@ export default function FormWizard() {
   const [video, setVideo] = useState<string | null>(null);
   const [voice, setVoice] = useState<string | null>(null);
 
+  // Audio Recording & Playback Preview State
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [soundObject, setSoundObject] = useState<Audio.Sound | null>(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+
   const [submitting, setSubmitting] = useState(false);
   const [syncingMedia, setSyncingMedia] = useState(false);
   const [uploadProgressMsg, setUploadProgressMsg] = useState('');
   const [overallPct, setOverallPct] = useState(0);
+
+  // Clean up sound on unmount
+  useEffect(() => {
+    return () => {
+      if (soundObject) {
+        soundObject.unloadAsync();
+      }
+    };
+  }, [soundObject]);
 
   useEffect(() => {
     (async () => {
@@ -120,6 +146,11 @@ export default function FormWizard() {
 
   const startVoiceRecording = async () => {
     try {
+      if (soundObject) {
+        await soundObject.unloadAsync();
+        setSoundObject(null);
+        setIsPlayingAudio(false);
+      }
       await Audio.requestPermissionsAsync();
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
       const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
@@ -136,6 +167,52 @@ export default function FormWizard() {
       const uri = recording.getURI();
       setVoice(uri);
     }
+  };
+
+  const playVoicePreview = async () => {
+    if (!voice) return;
+    try {
+      if (soundObject) {
+        const status = await soundObject.getStatusAsync();
+        if (status.isLoaded) {
+          if (isPlayingAudio) {
+            await soundObject.pauseAsync();
+            setIsPlayingAudio(false);
+            return;
+          } else {
+            await soundObject.playAsync();
+            setIsPlayingAudio(true);
+            return;
+          }
+        }
+      }
+
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: voice },
+        { shouldPlay: true },
+        playbackStatus => {
+          if (playbackStatus.isLoaded) {
+            if (playbackStatus.didJustFinish) {
+              setIsPlayingAudio(false);
+            }
+          }
+        }
+      );
+      setSoundObject(sound);
+      setIsPlayingAudio(true);
+    } catch (e) {
+      console.error('Error playing voice preview:', e);
+    }
+  };
+
+  const deleteVoiceNote = async () => {
+    if (soundObject) {
+      await soundObject.unloadAsync();
+      setSoundObject(null);
+    }
+    setIsPlayingAudio(false);
+    setVoice(null);
   };
 
   const handleToggleChecklistTask = (taskText: string) => {
@@ -156,17 +233,17 @@ export default function FormWizard() {
   const submitForm = async () => {
     const minPhotos = formConfig.enabledSections.photos ? formConfig.minPhotos : 0;
     if (photos.length < minPhotos) {
-      Alert.alert('Error / Erreur', `Please take at least ${minPhotos} photo(s). / Veuillez prendre au moins ${minPhotos} photo(s).`);
+      Alert.alert(t('error'), t('photoRequirementError', { min: minPhotos }));
       return;
     }
 
     if (formConfig.requireVideo && !video) {
-      Alert.alert('Error / Erreur', 'Video recording is required for this log.');
+      Alert.alert(t('error'), t('videoRequirementError'));
       return;
     }
 
     if (formConfig.requireVoice && !voice) {
-      Alert.alert('Error / Erreur', 'Voice audio note is required for this log.');
+      Alert.alert(t('error'), t('voiceRequirementError'));
       return;
     }
 
@@ -176,11 +253,13 @@ export default function FormWizard() {
       const logRef = doc(collection(db, 'agbelouve-farm-daily-logs'));
       const logId = logRef.id;
 
-      // Format dynamic livestock numbers
+      // Format dynamic livestock numbers (sanitized)
       const formattedLivestock: Record<string, number> = {};
       Object.entries(livestock).forEach(([key, val]) => {
-        formattedLivestock[`${key}Total`] = Number(val || 0);
+        formattedLivestock[`${key}Total`] = Math.max(0, parseInt(val, 10) || 0);
       });
+
+      const sanitizedExpense = Math.max(0, parseInt(amountSpent, 10) || 0);
 
       const payload = {
         logId,
@@ -215,7 +294,7 @@ export default function FormWizard() {
           : {},
         financials: formConfig.enabledSections.financials
           ? {
-              amountSpentXOF: Number(amountSpent || 0),
+              amountSpentXOF: sanitizedExpense,
               expenseReason: expenseReason || '',
             }
           : { amountSpentXOF: 0, expenseReason: '' },
@@ -268,7 +347,7 @@ export default function FormWizard() {
       // 3. Attempt immediate sync with progress feedback if online
       if (queueItems.length > 0) {
         setSyncingMedia(true);
-        setUploadProgressMsg('Uploading media files / Envoi des fichiers media...');
+        setUploadProgressMsg(t('submittingMedia'));
         const totalCount = queueItems.length;
         let completedCount = 0;
 
@@ -285,20 +364,20 @@ export default function FormWizard() {
         setSyncingMedia(false);
 
         if (syncResult.count === totalCount) {
-          Alert.alert('Success / Succès', 'Daily log & all media uploaded successfully!');
+          Alert.alert(t('success'), t('uploadSuccess'));
         } else {
           Alert.alert(
-            'Log Saved Offline / Enregistré Hors Ligne',
-            `${totalCount - syncResult.count} media file(s) saved in offline queue. Upload will complete automatically when connection is restored.`
+            t('offlineReady'),
+            t('offlineSaved', { count: totalCount - syncResult.count })
           );
         }
       } else {
-        Alert.alert('Success / Succès', 'Daily log submitted successfully!');
+        Alert.alert(t('success'), t('uploadSuccess'));
       }
 
       router.replace('/');
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      Alert.alert(t('error'), e.message);
     } finally {
       setSubmitting(false);
       setSyncingMedia(false);
@@ -318,15 +397,19 @@ export default function FormWizard() {
     <View className="mb-3">
       <Text className="font-extrabold text-sm mb-1.5">{label}</Text>
       <View className="flex-row justify-between">
-        {['PRESENT', 'ABSENT', 'SICK'].map(status => (
+        {[
+          { key: 'PRESENT', label: t('present') },
+          { key: 'ABSENT', label: t('absent') },
+          { key: 'SICK', label: t('sick') },
+        ].map(statusObj => (
           <TouchableOpacity
-            key={status}
-            onPress={() => setAttendance({ ...attendance, [id]: status })}
+            key={statusObj.key}
+            onPress={() => setAttendance({ ...attendance, [id]: statusObj.key })}
             className={`flex-1 py-2.5 border-2 border-black items-center mx-1 rounded-xl ${
-              attendance[id] === status ? 'bg-safety-yellow shadow-sm' : 'bg-gray-100'
+              attendance[id] === statusObj.key ? 'bg-safety-yellow shadow-sm' : 'bg-gray-100'
             }`}
           >
-            <Text className="font-extrabold text-xs">{status}</Text>
+            <Text className="font-extrabold text-xs">{statusObj.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -338,217 +421,251 @@ export default function FormWizard() {
     : formConfig.customChecklistEvening || [];
 
   return (
-    <ScrollView className="flex-1 bg-white p-4">
-      {/* Shift Banner & GPS Header */}
-      <View className="bg-black p-4 rounded-2xl border-2 border-safety-yellow mb-4 shadow-md flex-row justify-between items-center">
-        <View>
-          <Text className="text-safety-yellow font-extrabold text-xl">
-            {isMorning ? '🌅 MORNING SHIFT' : '🌙 EVENING SHIFT'}
-          </Text>
-          <Text className="text-gray-300 font-bold text-xs">
-            {isMorning ? 'Rapport du matin' : 'Rapport du soir'}
-          </Text>
-        </View>
-
-        {formConfig.enabledSections.gps && (
-          <View className={`px-3 py-1.5 rounded-full border ${gps ? 'bg-green-500 border-black' : 'bg-red-500 border-white'}`}>
-            <Text className="text-black font-extrabold text-xs">
-              {gps ? '📍 GPS OK' : '⚠️ NO GPS'}
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      className="flex-1 bg-white"
+    >
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        className="flex-1 bg-white p-4"
+      >
+        {/* Shift Banner & GPS Header */}
+        <View className="bg-black p-4 rounded-2xl border-2 border-safety-yellow mb-4 shadow-md flex-row justify-between items-center">
+          <View>
+            <Text className="text-safety-yellow font-extrabold text-xl">
+              {isMorning ? t('morningShiftTitle') : t('eveningShiftTitle')}
+            </Text>
+            <Text className="text-gray-300 font-bold text-xs">
+              {isMorning ? t('morningSubtitle') : t('eveningSubtitle')}
             </Text>
           </View>
-        )}
-      </View>
 
-      {/* 1. ATTENDANCE SECTION */}
-      {formConfig.enabledSections.attendance && (
-        <View className="mb-6 bg-gray-50 p-4 rounded-2xl border-2 border-gray-200 shadow-sm">
-          <Text className="text-base font-extrabold text-black uppercase mb-3">👥 Attendance / Présence</Text>
-          <WorkerRow label="Worker 1 (Mechanist)" id="worker1" />
-          <WorkerRow label="Worker 2 (Herdsman 1)" id="worker2" />
-          <WorkerRow label="Worker 3 (Herdsman 2)" id="worker3" />
-          <WorkerRow label="Worker 4 (Forester)" id="worker4" />
-        </View>
-      )}
-
-      {/* 2. LIVESTOCK POPULATION SECTION */}
-      {formConfig.enabledSections.livestock && formConfig.livestockCategories.length > 0 && (
-        <View className="mb-6 bg-gray-50 p-4 rounded-2xl border-2 border-gray-200 shadow-sm">
-          <Text className="text-base font-extrabold text-black uppercase mb-3">🐐 Livestock Population</Text>
-          <View className="flex-row flex-wrap justify-between gap-3">
-            {formConfig.livestockCategories.map(cat => (
-              <View key={cat.id} className="min-w-[45%] flex-1 items-center bg-white p-3 rounded-xl border border-gray-300">
-                <Text className="font-extrabold text-xs mb-2 text-center">
-                  {cat.icon || '🐾'} {cat.label}
-                </Text>
-                <TextInput
-                  keyboardType="numeric"
-                  className="border-2 border-black text-xl p-2 w-24 text-center font-extrabold rounded-lg bg-gray-50"
-                  value={livestock[cat.id] || '0'}
-                  onChangeText={val => setLivestock({ ...livestock, [cat.id]: val })}
-                />
-              </View>
-            ))}
-          </View>
-        </View>
-      )}
-
-      {/* 3. TASKS & CHECKLISTS SECTION */}
-      {formConfig.enabledSections.operations && (
-        <View className="mb-6 bg-gray-50 p-4 rounded-2xl border-2 border-gray-200 shadow-sm">
-          <Text className="text-base font-extrabold text-black uppercase mb-2">
-            🚜 {isMorning ? 'Planned Tasks / Tâches Prévues' : 'Completed Tasks / Tâches Réalisées'}
-          </Text>
-
-          {/* Quick-Tap Checklist Chips */}
-          {activeChecklist.length > 0 && (
-            <View className="mb-3">
-              <Text className="text-gray-500 font-extrabold text-xs uppercase mb-1.5">Quick Checklist (Tap to add):</Text>
-              <View className="flex-row flex-wrap gap-1.5">
-                {activeChecklist.map((taskItem, idx) => {
-                  const isChecked = tasks.includes(taskItem);
-                  return (
-                    <TouchableOpacity
-                      key={idx}
-                      className={`px-3 py-1.5 rounded-full border ${
-                        isChecked
-                          ? 'bg-safety-yellow border-black shadow-sm'
-                          : 'bg-white border-gray-300'
-                      }`}
-                      onPress={() => handleToggleChecklistTask(taskItem)}
-                    >
-                      <Text className="font-extrabold text-xs text-black">
-                        {isChecked ? '✓ ' : '+ '} {taskItem}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+          {formConfig.enabledSections.gps && (
+            <View className={`px-3 py-1.5 rounded-full border ${gps ? 'bg-green-500 border-black' : 'bg-red-500 border-white'}`}>
+              <Text className="text-black font-extrabold text-xs">
+                {gps ? t('gpsOk') : t('noGps')}
+              </Text>
             </View>
           )}
+        </View>
 
+        {/* 1. ATTENDANCE SECTION */}
+        {formConfig.enabledSections.attendance && (
+          <View className="mb-6 bg-gray-50 p-4 rounded-2xl border-2 border-gray-200 shadow-sm">
+            <Text className="text-base font-extrabold text-black uppercase mb-3">{t('attendanceHeader')}</Text>
+            <WorkerRow label="Worker 1 (Mechanist / Mécanicien)" id="worker1" />
+            <WorkerRow label="Worker 2 (Herdsman 1 / Berger 1)" id="worker2" />
+            <WorkerRow label="Worker 3 (Herdsman 2 / Berger 2)" id="worker3" />
+            <WorkerRow label="Worker 4 (Forester / Forestier)" id="worker4" />
+          </View>
+        )}
+
+        {/* 2. LIVESTOCK POPULATION SECTION */}
+        {formConfig.enabledSections.livestock && formConfig.livestockCategories.length > 0 && (
+          <View className="mb-6 bg-gray-50 p-4 rounded-2xl border-2 border-gray-200 shadow-sm">
+            <Text className="text-base font-extrabold text-black uppercase mb-3">{t('livestockHeader')}</Text>
+            <View className="flex-row flex-wrap justify-between gap-3">
+              {formConfig.livestockCategories.map(cat => (
+                <View key={cat.id} className="min-w-[45%] flex-1 items-center bg-white p-3 rounded-xl border border-gray-300">
+                  <Text className="font-extrabold text-xs mb-2 text-center">
+                    {cat.icon || '🐾'} {cat.label}
+                  </Text>
+                  <TextInput
+                    keyboardType="numeric"
+                    className="border-2 border-black text-xl p-2 w-24 text-center font-extrabold rounded-lg bg-gray-50"
+                    value={livestock[cat.id] || '0'}
+                    onChangeText={val => {
+                      const cleanVal = val.replace(/[^0-9]/g, '');
+                      setLivestock({ ...livestock, [cat.id]: cleanVal });
+                    }}
+                  />
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* 3. TASKS & CHECKLISTS SECTION */}
+        {formConfig.enabledSections.operations && (
+          <View className="mb-6 bg-gray-50 p-4 rounded-2xl border-2 border-gray-200 shadow-sm">
+            <Text className="text-base font-extrabold text-black uppercase mb-2">
+              {isMorning ? t('operationsMorning') : t('operationsEvening')}
+            </Text>
+
+            {/* Quick-Tap Checklist Chips */}
+            {activeChecklist.length > 0 && (
+              <View className="mb-3">
+                <Text className="text-gray-500 font-extrabold text-xs uppercase mb-1.5">{t('quickChecklist')}</Text>
+                <View className="flex-row flex-wrap gap-1.5">
+                  {activeChecklist.map((taskItem, idx) => {
+                    const isChecked = tasks.includes(taskItem);
+                    return (
+                      <TouchableOpacity
+                        key={idx}
+                        className={`px-3 py-1.5 rounded-full border ${
+                          isChecked
+                            ? 'bg-safety-yellow border-black shadow-sm'
+                            : 'bg-white border-gray-300'
+                        }`}
+                        onPress={() => handleToggleChecklistTask(taskItem)}
+                      >
+                        <Text className="font-extrabold text-xs text-black">
+                          {isChecked ? '✓ ' : '+ '} {taskItem}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            <TextInput
+              multiline
+              numberOfLines={4}
+              className="border-2 border-black p-3.5 text-base font-bold rounded-xl bg-white min-h-[100px]"
+              placeholder={t('taskPlaceholder')}
+              placeholderTextColor="#888888"
+              value={tasks}
+              onChangeText={setTasks}
+              textAlignVertical="top"
+            />
+          </View>
+        )}
+
+        {/* 4. FINANCIALS / EXPENSES SECTION */}
+        {formConfig.enabledSections.financials && (
+          <View className="mb-6 bg-purple-50 p-4 rounded-2xl border-2 border-purple-200 shadow-sm">
+            <Text className="text-base font-extrabold text-purple-950 uppercase mb-3">{t('expensesHeader')}</Text>
+            <TextInput
+              keyboardType="numeric"
+              className="border-2 border-purple-400 p-3 text-lg font-extrabold rounded-xl bg-white mb-2 text-purple-950"
+              placeholder={t('amountSpentPlaceholder')}
+              placeholderTextColor="#999999"
+              value={amountSpent}
+              onChangeText={val => setAmountSpent(val.replace(/[^0-9]/g, ''))}
+            />
+            <TextInput
+              className="border-2 border-purple-400 p-3 text-sm font-bold rounded-xl bg-white text-purple-950"
+              placeholder={t('expenseReasonPlaceholder')}
+              placeholderTextColor="#999999"
+              value={expenseReason}
+              onChangeText={setExpenseReason}
+            />
+          </View>
+        )}
+
+        {/* 5. NOTES SECTION */}
+        <View className="mb-6 bg-gray-50 p-4 rounded-2xl border-2 border-gray-200 shadow-sm">
+          <Text className="text-base font-extrabold text-black uppercase mb-2">{t('notesHeader')}</Text>
           <TextInput
             multiline
-            numberOfLines={4}
-            className="border-2 border-black p-3.5 text-base font-bold rounded-xl bg-white min-h-[100px]"
-            placeholder="Type task details or tap checklist chips above..."
+            numberOfLines={3}
+            className="border-2 border-black p-3.5 text-sm font-bold rounded-xl bg-white min-h-[80px]"
+            placeholder={t('notesPlaceholder')}
             placeholderTextColor="#888888"
-            value={tasks}
-            onChangeText={setTasks}
+            value={notes}
+            onChangeText={setNotes}
             textAlignVertical="top"
           />
         </View>
-      )}
 
-      {/* 4. FINANCIALS / EXPENSES SECTION */}
-      {formConfig.enabledSections.financials && (
-        <View className="mb-6 bg-purple-50 p-4 rounded-2xl border-2 border-purple-200 shadow-sm">
-          <Text className="text-base font-extrabold text-purple-950 uppercase mb-3">💰 Field Expenses (XOF)</Text>
-          <TextInput
-            keyboardType="numeric"
-            className="border-2 border-purple-400 p-3 text-lg font-extrabold rounded-xl bg-white mb-2 text-purple-950"
-            placeholder="Amount spent in XOF (e.g. 5000)..."
-            placeholderTextColor="#999999"
-            value={amountSpent}
-            onChangeText={setAmountSpent}
-          />
-          <TextInput
-            className="border-2 border-purple-400 p-3 text-sm font-bold rounded-xl bg-white text-purple-950"
-            placeholder="Expense reason (e.g. Fuel purchase, emergency medicine)..."
-            placeholderTextColor="#999999"
-            value={expenseReason}
-            onChangeText={setExpenseReason}
-          />
-        </View>
-      )}
+        {/* 6. MEDIA UPLOAD SECTION */}
+        <View className="mb-6 bg-gray-50 p-4 rounded-2xl border-2 border-gray-200 shadow-sm">
+          <Text className="text-base font-extrabold text-black uppercase mb-3">{t('mediaHeader')}</Text>
 
-      {/* 5. NOTES SECTION */}
-      <View className="mb-6 bg-gray-50 p-4 rounded-2xl border-2 border-gray-200 shadow-sm">
-        <Text className="text-base font-extrabold text-black uppercase mb-2">📝 Manager Notes / Remarques</Text>
-        <TextInput
-          multiline
-          numberOfLines={3}
-          className="border-2 border-black p-3.5 text-sm font-bold rounded-xl bg-white min-h-[80px]"
-          placeholder="Issues, animal health, weather observations..."
-          placeholderTextColor="#888888"
-          value={notes}
-          onChangeText={setNotes}
-          textAlignVertical="top"
-        />
-      </View>
+          {formConfig.enabledSections.photos && (
+            <TouchableOpacity
+              onPress={takePhoto}
+              className="bg-safety-yellow py-3.5 px-4 items-center mb-3 rounded-xl border-2 border-black shadow-sm"
+            >
+              <Text className="font-extrabold text-black text-sm uppercase">
+                {t('takePhoto', { count: photos.length, min: formConfig.minPhotos })}
+              </Text>
+            </TouchableOpacity>
+          )}
 
-      {/* 6. MEDIA UPLOAD SECTION */}
-      <View className="mb-6 bg-gray-50 p-4 rounded-2xl border-2 border-gray-200 shadow-sm">
-        <Text className="text-base font-extrabold text-black uppercase mb-3">📸 Media Verification</Text>
+          {formConfig.enabledSections.video && (
+            <TouchableOpacity
+              onPress={recordVideo}
+              className={`py-3.5 px-4 items-center mb-3 rounded-xl border-2 border-black ${
+                video ? 'bg-green-100 border-green-600' : 'bg-gray-200'
+              }`}
+            >
+              <Text className="font-extrabold text-black text-sm uppercase">
+                {video ? t('videoRecorded') : t('recordVideo')}
+              </Text>
+            </TouchableOpacity>
+          )}
 
-        {formConfig.enabledSections.photos && (
-          <TouchableOpacity
-            onPress={takePhoto}
-            className="bg-safety-yellow py-3.5 px-4 items-center mb-3 rounded-xl border-2 border-black shadow-sm"
-          >
-            <Text className="font-extrabold text-black text-sm uppercase">
-              📷 TAKE PHOTO ({photos.length}/{formConfig.minPhotos} required)
-            </Text>
-          </TouchableOpacity>
-        )}
+          {formConfig.enabledSections.voice && (
+            <View className="mb-2">
+              <TouchableOpacity
+                onPress={recording ? stopVoiceRecording : startVoiceRecording}
+                className={`py-3.5 px-4 items-center rounded-xl border-2 border-black ${
+                  recording ? 'bg-red-500' : voice ? 'bg-green-100 border-green-600' : 'bg-gray-200'
+                }`}
+              >
+                <Text className={`font-extrabold text-sm uppercase ${recording ? 'text-white' : 'text-black'}`}>
+                  {recording ? t('stopRecording') : voice ? t('voiceSaved') : t('recordVoice')}
+                </Text>
+              </TouchableOpacity>
 
-        {formConfig.enabledSections.video && (
-          <TouchableOpacity
-            onPress={recordVideo}
-            className={`py-3.5 px-4 items-center mb-3 rounded-xl border-2 border-black ${
-              video ? 'bg-green-100 border-green-600' : 'bg-gray-200'
-            }`}
-          >
-            <Text className="font-extrabold text-black text-sm uppercase">
-              🎥 {video ? '✓ VIDEO RECORDED' : 'RECORD SHORT VIDEO'}
-            </Text>
-          </TouchableOpacity>
-        )}
+              {/* Audio Playback Preview Player */}
+              {voice && !recording && (
+                <View className="flex-row items-center justify-between mt-2 bg-white p-3 rounded-xl border border-gray-300">
+                  <TouchableOpacity
+                    onPress={playVoicePreview}
+                    className="bg-black px-4 py-2 rounded-lg flex-row items-center"
+                  >
+                    <Text className="text-safety-yellow font-extrabold text-xs">
+                      {isPlayingAudio ? t('pauseVoice') : t('playVoice')}
+                    </Text>
+                  </TouchableOpacity>
 
-        {formConfig.enabledSections.voice && (
-          <TouchableOpacity
-            onPress={recording ? stopVoiceRecording : startVoiceRecording}
-            className={`py-3.5 px-4 items-center mb-2 rounded-xl border-2 border-black ${
-              recording ? 'bg-red-500' : voice ? 'bg-green-100 border-green-600' : 'bg-gray-200'
-            }`}
-          >
-            <Text className={`font-extrabold text-sm uppercase ${recording ? 'text-white' : 'text-black'}`}>
-              🎙️ {recording ? 'STOP RECORDING' : voice ? '✓ AUDIO NOTE SAVED' : 'RECORD VOICE NOTE'}
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* SUBMIT BUTTON */}
-      <TouchableOpacity
-        onPress={submitForm}
-        disabled={submitting}
-        className="bg-black py-5 items-center rounded-2xl mb-12 border-2 border-safety-yellow shadow-xl"
-      >
-        {submitting ? (
-          <ActivityIndicator size="large" color="#FFCC00" />
-        ) : (
-          <Text className="text-safety-yellow font-extrabold text-2xl tracking-wider uppercase">
-            SUBMIT LOG / ENVOYER
-          </Text>
-        )}
-      </TouchableOpacity>
-
-      {/* MODAL: MEDIA UPLOADING PROGRESS */}
-      <Modal visible={syncingMedia} transparent animationType="fade">
-        <View className="flex-1 bg-black/80 justify-center items-center p-6">
-          <View className="bg-white rounded-3xl p-6 w-full items-center border-4 border-safety-yellow shadow-2xl">
-            <ActivityIndicator size="large" color="#FFCC00" />
-            <Text className="text-xl font-extrabold mt-4 text-center text-black">STREAMING MEDIA</Text>
-            <Text className="text-sm font-bold text-gray-700 text-center mt-2">{uploadProgressMsg}</Text>
-            <View className="w-full bg-gray-200 h-5 rounded-full mt-6 overflow-hidden border-2 border-black">
-              <View className="bg-safety-yellow h-full" style={{ width: `${overallPct}%` }} />
+                  <TouchableOpacity
+                    onPress={deleteVoiceNote}
+                    className="bg-red-50 px-3 py-2 rounded-lg border border-red-300"
+                  >
+                    <Text className="text-red-700 font-extrabold text-xs">
+                      {t('deleteVoice')}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
-            <Text className="text-lg font-extrabold mt-2 text-black">{overallPct}%</Text>
-          </View>
+          )}
         </View>
-      </Modal>
-    </ScrollView>
+
+        {/* SUBMIT BUTTON */}
+        <TouchableOpacity
+          onPress={submitForm}
+          disabled={submitting}
+          className="bg-black py-5 items-center rounded-2xl mb-12 border-2 border-safety-yellow shadow-xl"
+        >
+          {submitting ? (
+            <ActivityIndicator size="large" color="#FFCC00" />
+          ) : (
+            <Text className="text-safety-yellow font-extrabold text-2xl tracking-wider uppercase">
+              {t('submitLog')}
+            </Text>
+          )}
+        </TouchableOpacity>
+
+        {/* MODAL: MEDIA UPLOADING PROGRESS */}
+        <Modal visible={syncingMedia} transparent animationType="fade">
+          <View className="flex-1 bg-black/80 justify-center items-center p-6">
+            <View className="bg-white rounded-3xl p-6 w-full items-center border-4 border-safety-yellow shadow-2xl">
+              <ActivityIndicator size="large" color="#FFCC00" />
+              <Text className="text-xl font-extrabold mt-4 text-center text-black">{t('submittingMedia')}</Text>
+              <Text className="text-sm font-bold text-gray-700 text-center mt-2">{uploadProgressMsg}</Text>
+              <View className="w-full bg-gray-200 h-5 rounded-full mt-6 overflow-hidden border-2 border-black">
+                <View className="bg-safety-yellow h-full" style={{ width: `${overallPct}%` }} />
+              </View>
+              <Text className="text-lg font-extrabold mt-2 text-black">{overallPct}%</Text>
+            </View>
+          </View>
+        </Modal>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
-
-

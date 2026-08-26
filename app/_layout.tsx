@@ -1,17 +1,21 @@
 import './global.css';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator, Text } from 'react-native';
+import { View, ActivityIndicator, Text, TouchableOpacity } from 'react-native';
 import { useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '../lib/firebase';
+import { startNetworkSyncListener } from '../lib/sync';
+import { useTranslation } from '../lib/i18n';
 
 export default function RootLayout() {
   const [user, setUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
   const router = useRouter();
   const segments = useSegments();
+  const { currentLanguage, changeLanguage, isFrench } = useTranslation();
 
+  // 1. Listen for Auth State
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -23,6 +27,15 @@ export default function RootLayout() {
     return unsubscribe;
   }, [initializing]);
 
+  // 2. Start Background Network Sync Listener
+  useEffect(() => {
+    const unsubNet = startNetworkSyncListener((syncedCount) => {
+      console.log(`[Auto-Sync] Background upload completed: ${syncedCount} media items synced.`);
+    });
+    return () => unsubNet();
+  }, []);
+
+  // 3. Centralized Route Guard
   useEffect(() => {
     if (initializing) return;
 
@@ -38,6 +51,17 @@ export default function RootLayout() {
     }
   }, [user, initializing, segments]);
 
+  const LanguageHeaderButton = () => (
+    <TouchableOpacity
+      onPress={() => changeLanguage(isFrench ? 'en' : 'fr')}
+      className="bg-black px-2.5 py-1 rounded-lg border border-black flex-row items-center mr-2"
+    >
+      <Text className="text-safety-yellow font-extrabold text-xs">
+        {isFrench ? '🇫🇷 FR' : '🇺🇸 EN'}
+      </Text>
+    </TouchableOpacity>
+  );
+
   if (initializing) {
     return (
       <View style={{ flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}>
@@ -50,7 +74,7 @@ export default function RootLayout() {
             AGBELOUVE FARM
           </Text>
           <Text className="text-xs font-bold text-gray-500 mt-1">
-            Loading session... / Chargement...
+            {isFrench ? 'Chargement de la session...' : 'Loading session...'}
           </Text>
         </View>
       </View>
@@ -63,15 +87,16 @@ export default function RootLayout() {
       <Stack screenOptions={{ 
         headerStyle: { backgroundColor: '#FFCC00' },
         headerTintColor: '#000000',
-        headerTitleStyle: { fontWeight: 'bold' } 
+        headerTitleStyle: { fontWeight: 'bold' },
+        headerRight: () => <LanguageHeaderButton />
       }}>
         <Stack.Screen name="index" options={{ title: 'Agbelouve Farm Manager' }} />
-        <Stack.Screen name="login" options={{ title: 'Login / Connexion', headerShown: false }} />
-        <Stack.Screen name="register-tenant" options={{ title: 'Register Farm / Nouvelle Ferme' }} />
-        <Stack.Screen name="team-management" options={{ title: 'Team Management / Équipe' }} />
-        <Stack.Screen name="admin-reports" options={{ title: 'Reports & Logs / Rapports & Journaux' }} />
-        <Stack.Screen name="form-wizard" options={{ title: 'Daily Log / Rapport' }} />
-        <Stack.Screen name="sync-status" options={{ title: 'Sync Status / Statut' }} />
+        <Stack.Screen name="login" options={{ title: isFrench ? 'Connexion' : 'Login', headerShown: false }} />
+        <Stack.Screen name="register-tenant" options={{ title: isFrench ? 'Nouvelle Ferme' : 'Register Farm' }} />
+        <Stack.Screen name="team-management" options={{ title: isFrench ? 'Équipe & Accès' : 'Team Management' }} />
+        <Stack.Screen name="admin-reports" options={{ title: isFrench ? 'Rapports & Journaux' : 'Reports & Logs' }} />
+        <Stack.Screen name="form-wizard" options={{ title: isFrench ? 'Rapport de Quart' : 'Shift Daily Log' }} />
+        <Stack.Screen name="sync-status" options={{ title: isFrench ? 'File de Synchronisation' : 'Sync Status' }} />
       </Stack>
     </View>
   );
